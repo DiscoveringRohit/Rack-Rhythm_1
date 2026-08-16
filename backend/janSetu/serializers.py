@@ -1,12 +1,10 @@
 from rest_framework import serializers
 
-class EmailOTPRequestSerializer(serializers.Serializer):
+class OTPRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
+    phone_number = serializers.CharField(max_length=15)
 
-class EmailOTPVerifySerializer(serializers.Serializer):
+class OTPVerifySerializer(serializers.Serializer):
     email = serializers.EmailField()
+    phone_number = serializers.CharField(max_length=15)
     otp_code = serializers.CharField(max_length=6)
-
-class FirebaseVerifySerializer(serializers.Serializer):
-    firebase_id_token = serializers.CharField()
-
