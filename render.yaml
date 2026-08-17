@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: janseva-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r ../requirements.txt && python manage.py collectstatic --no-input && python manage.py migrate
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.9
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com,localhost"
+      - key: SUPABASE_DB_URL
+        sync: false   # set manually in Render dashboard — keeps secret out of git
+      - key: SECRET_KEY
+        generateValue: true  # Render auto-generates a secure random key

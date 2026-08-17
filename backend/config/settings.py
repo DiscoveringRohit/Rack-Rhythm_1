@@ -15,17 +15,25 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / '.env')
+except ImportError:
+    pass
+
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-!)_h3cd0%(0o2-$k9q=$pdu%%e76udto2(mv)6py+e(h4nxp(t'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-!)_h3cd0%(0o2-$k9q=$pdu%%e76udto2(mv)6py+e(h4nxp(t')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 
 # Application definition
@@ -49,6 +57,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
 
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -80,12 +89,51 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+from urllib.parse import urlparse, unquote
+
+SUPABASE_DB_URL = os.environ.get('SUPABASE_DB_URL')
+SUPABASE_DB_HOST = os.environ.get('SUPABASE_DB_HOST')
+
+if SUPABASE_DB_URL:
+    url = urlparse(SUPABASE_DB_URL)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': unquote(url.path[1:]),
+            'USER': unquote(url.username or ''),
+            'PASSWORD': unquote(url.password or ''),
+            'HOST': url.hostname,
+            'PORT': url.port or 5432,
+            'OPTIONS': {
+                'sslmode': 'require',
+            }
+        }
     }
-}
+    if url.port == 6543:
+        DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
+elif SUPABASE_DB_HOST:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('SUPABASE_DB_NAME', 'postgres'),
+            'USER': os.environ.get('SUPABASE_DB_USER', 'postgres'),
+            'PASSWORD': os.environ.get('SUPABASE_DB_PASSWORD', ''),
+            'HOST': SUPABASE_DB_HOST,
+            'PORT': os.environ.get('SUPABASE_DB_PORT', '5432'),
+            'OPTIONS': {
+                'sslmode': 'require',
+            }
+        }
+    }
+    if os.environ.get('SUPABASE_DB_PORT') == '6543':
+        DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -123,6 +171,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 
 # Email
@@ -139,9 +189,20 @@ MAILERS = {
     },
 }
 
+# In production allow the deployed frontend; locally allow dev ports
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "http://localhost:3000",
 ]
+
+# Allow any extra origin set via env (e.g. Vercel frontend URL)
+_EXTRA_CORS = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if _EXTRA_CORS:
+    CORS_ALLOWED_ORIGINS += [o.strip() for o in _EXTRA_CORS.split(',') if o.strip()]
+
+# Fallback: allow all in non-debug/production if no explicit origins set
+if not DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 AUTH_USER_MODEL = 'janSetu.CustomUser'
 
@@ -150,4 +211,7 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
 
