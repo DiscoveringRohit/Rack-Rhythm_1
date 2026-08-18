@@ -196,24 +196,43 @@ MAILERS = {
 
 # In production allow the deployed frontend; locally allow dev ports
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
     "http://localhost:3000",
-    "http://localhost:3000",  # local dev (user-provided)
-    "https://jan-seva-eight.vercel.app",  # production frontend (user-provided)
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+
+    # Production Vercel frontend
+    "https://jan-seva-eight.vercel.app",
 ]
 
-# Allow any extra origin set via env (e.g. additional Vercel frontend URLs)
-_EXTRA_CORS = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+_EXTRA_CORS = os.environ.get("CORS_ALLOWED_ORIGINS", "")
 if _EXTRA_CORS:
-    CORS_ALLOWED_ORIGINS += [o.strip() for o in _EXTRA_CORS.split(',') if o.strip()]
+    CORS_ALLOWED_ORIGINS += [
+        o.strip()
+        for o in _EXTRA_CORS.split(",")
+        if o.strip()
+    ]
 
-# Allow credentials (cookies) to be sent cross-origin. Frontend must use fetch(..., { credentials: 'include' }).
 CORS_ALLOW_CREDENTIALS = True
 
-# Fallback: allow all in non-debug/production if no explicit origins set
-if not DEBUG:
-    CORS_ALLOW_ALL_ORIGINS = True
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
 
+    # Production Vercel frontend
+    "https://jan-seva-eight.vercel.app",
+]
+
+_EXTRA_CSRF = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
+if _EXTRA_CSRF:
+    CSRF_TRUSTED_ORIGINS += [
+        o.strip()
+        for o in _EXTRA_CSRF.split(",")
+        if o.strip()
+    ]
+    
 AUTH_USER_MODEL = 'janSetu.CustomUser'
 
 REST_FRAMEWORK = {
@@ -224,4 +243,4 @@ REST_FRAMEWORK = {
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-
+
