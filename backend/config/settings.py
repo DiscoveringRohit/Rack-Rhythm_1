@@ -198,12 +198,17 @@ MAILERS = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
+    "http://localhost:3000",  # local dev (user-provided)
+    "https://jan-seva-eight.vercel.app",  # production frontend (user-provided)
 ]
 
-# Allow any extra origin set via env (e.g. Vercel frontend URL)
+# Allow any extra origin set via env (e.g. additional Vercel frontend URLs)
 _EXTRA_CORS = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 if _EXTRA_CORS:
     CORS_ALLOWED_ORIGINS += [o.strip() for o in _EXTRA_CORS.split(',') if o.strip()]
+
+# Allow credentials (cookies) to be sent cross-origin. Frontend must use fetch(..., { credentials: 'include' }).
+CORS_ALLOW_CREDENTIALS = True
 
 # Fallback: allow all in non-debug/production if no explicit origins set
 if not DEBUG:
