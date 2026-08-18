@@ -194,44 +194,39 @@ MAILERS = {
     },
 }
 
-# In production allow the deployed frontend; locally allow dev ports
+# CORS & CSRF Configuration
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
-
-    # Production Vercel frontend
     "https://jan-seva-eight.vercel.app",
 ]
 
-# _EXTRA_CORS = os.environ.get("CORS_ALLOWED_ORIGINS", "")
-# if _EXTRA_CORS:
-#     CORS_ALLOWED_ORIGINS += [
-#         o.strip()
-#         for o in _EXTRA_CORS.split(",")
-#         if o.strip()
-#     ]
-
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
-
-    # Production Vercel frontend
     "https://jan-seva-eight.vercel.app",
+    "https://*.vercel.app",
+    "https://*.onrender.com",
 ]
-
-# _EXTRA_CSRF = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
-# if _EXTRA_CSRF:
-#     CSRF_TRUSTED_ORIGINS += [
-#         o.strip()
-#         for o in _EXTRA_CSRF.split(",")
-#         if o.strip()
-#     ]
     
 AUTH_USER_MODEL = 'janSetu.CustomUser'
 
