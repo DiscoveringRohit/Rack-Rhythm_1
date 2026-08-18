@@ -190,7 +190,7 @@ MAILERS = {
         'PORT': 587,
         'USE_TLS': True,
         'USER': 'rackrhythm@gmail.com',
-        'PASSWORD': 'your_16_character_app_password',
+        'PASSWORD': 'jixp jfzq yohp stqc',
     },
 }
 
