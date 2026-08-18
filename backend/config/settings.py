@@ -205,13 +205,13 @@ CORS_ALLOWED_ORIGINS = [
     "https://jan-seva-eight.vercel.app",
 ]
 
-_EXTRA_CORS = os.environ.get("CORS_ALLOWED_ORIGINS", "")
-if _EXTRA_CORS:
-    CORS_ALLOWED_ORIGINS += [
-        o.strip()
-        for o in _EXTRA_CORS.split(",")
-        if o.strip()
-    ]
+# _EXTRA_CORS = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+# if _EXTRA_CORS:
+#     CORS_ALLOWED_ORIGINS += [
+#         o.strip()
+#         for o in _EXTRA_CORS.split(",")
+#         if o.strip()
+#     ]
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -225,13 +225,13 @@ CSRF_TRUSTED_ORIGINS = [
     "https://jan-seva-eight.vercel.app",
 ]
 
-_EXTRA_CSRF = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
-if _EXTRA_CSRF:
-    CSRF_TRUSTED_ORIGINS += [
-        o.strip()
-        for o in _EXTRA_CSRF.split(",")
-        if o.strip()
-    ]
+# _EXTRA_CSRF = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
+# if _EXTRA_CSRF:
+#     CSRF_TRUSTED_ORIGINS += [
+#         o.strip()
+#         for o in _EXTRA_CSRF.split(",")
+#         if o.strip()
+#     ]
     
 AUTH_USER_MODEL = 'janSetu.CustomUser'
 
