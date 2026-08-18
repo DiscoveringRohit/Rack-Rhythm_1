@@ -3,6 +3,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
 import random
 from datetime import timedelta
 from django.utils import timezone
@@ -15,6 +16,41 @@ from .serializers import (
     OTPRequestSerializer, OTPVerifySerializer, CustomUserSerializer,
     CivicIssueSerializer, CommentSerializer, NotificationSerializer
 )
+
+# Helper to set refresh cookie on responses
+def _set_refresh_cookie(resp: Response, refresh_token: str):
+    # Secure should be True in production (requires HTTPS). Use settings.DEBUG to toggle locally.
+    secure_flag = not settings.DEBUG
+    # 14 days for example; align with your JWT settings
+    max_age = 14 * 24 * 3600
+    resp.set_cookie(
+        key='janseva_refresh',
+        value=refresh_token,
+        httponly=True,
+        secure=secure_flag,
+        samesite='Lax',
+        max_age=max_age,
+        path='/'
+    )
+    return resp
+
+class CookieTokenObtainPairView(TokenObtainPairView):
+    """Subclass the standard TokenObtainPairView to set the refresh token as an HttpOnly cookie.
+
+    Returns JSON body: { "access": "<access_token>" }
+    and sets janseva_refresh cookie with the refresh token.
+    """
+    def post(self, request, *args, **kwargs):
+        original_response = super().post(request, *args, **kwargs)
+        # original_response.data typically contains {'refresh': '...', 'access': '...'} on success
+        if original_response.status_code == 200 and isinstance(original_response.data, dict):
+            refresh = original_response.data.get('refresh')
+            access = original_response.data.get('access')
+            resp = Response({'access': access}, status=status.HTTP_200_OK)
+            if refresh:
+                _set_refresh_cookie(resp, refresh)
+            return resp
+        return original_response
 
 @api_view(["GET"])
 def hello_api(request):
@@ -73,7 +109,10 @@ def email_verify_otp(request):
                 user.save()
                 
             tokens = get_tokens_for_user(user)
-            return Response(tokens, status=status.HTTP_200_OK)
+            # Set refresh token as HttpOnly cookie, return access in body
+            resp = Response({'access': tokens['access']}, status=status.HTTP_200_OK)
+            _set_refresh_cookie(resp, tokens['refresh'])
+            return resp
         else:
             return Response({"error": "Invalid or expired OTP"}, status=status.HTTP_400_BAD_REQUEST)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -134,17 +173,57 @@ def register_user(request):
     user.save()
 
     tokens = get_tokens_for_user(user)
-    return Response({
+    # Set refresh token cookie and return access + user
+    resp = Response({
         "user": CustomUserSerializer(user).data,
-        "token": tokens['access'],
-        "refresh": tokens['refresh']
+        "access": tokens['access']
     }, status=status.HTTP_201_CREATED)
+    _set_refresh_cookie(resp, tokens['refresh'])
+    return resp
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_profile(request):
     serializer = CustomUserSerializer(request.user)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def cookie_refresh(request):
+    """Refresh access token using the HttpOnly janseva_refresh cookie.
+
+    Returns: { "access": "<new_access>" }
+    """
+    refresh_token = request.COOKIES.get('janseva_refresh')
+    if not refresh_token:
+        return Response({"detail": "No refresh token cookie present."}, status=status.HTTP_401_UNAUTHORIZED)
+    try:
+        token = RefreshToken(refresh_token)
+        new_access = str(token.access_token)
+        # Optionally: rotate refresh token here by issuing a new RefreshToken.for_user(user)
+        return Response({"access": new_access}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"detail": "Invalid or expired refresh token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def logout_view(request):
+    """Logout endpoint: clears the HttpOnly janseva_refresh cookie on the client.
+
+    This endpoint does not require a valid access token since its purpose is to ensure the
+    cookie is removed from the browser. If you use token blacklisting, you can accept
+    a refresh token and blacklist it here.
+    """
+    resp = Response({"detail": "Logged out"}, status=status.HTTP_200_OK)
+    # Delete the cookie by name; ensure path matches how it was set
+    try:
+        resp.delete_cookie('janseva_refresh', path='/')
+    except Exception:
+        # Fallback: set an expired cookie
+        resp.set_cookie('janseva_refresh', '', max_age=0, path='/')
+    return resp
 
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
