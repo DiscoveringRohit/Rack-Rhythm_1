@@ -11,10 +11,11 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.db.models import Q
 
-from .models import CustomUser, OTPRecord, CivicIssue, Comment, NotificationItem
+from .models import CustomUser, OTPRecord, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile
 from .serializers import (
     OTPRequestSerializer, OTPVerifySerializer, CustomUserSerializer,
-    CivicIssueSerializer, CommentSerializer, NotificationSerializer
+    CivicIssueSerializer, CommentSerializer, NotificationSerializer,
+    StateSerializer, CitySerializer, WardSerializer, RegisterSerializer, LoginSerializer
 )
 
 # Helper to set refresh cookie on responses
@@ -60,99 +61,110 @@ def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
     return {'refresh': str(refresh), 'access': str(refresh.access_token)}
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def email_request_otp(request):
-    serializer = OTPRequestSerializer(data=request.data)
-    if serializer.is_valid():
-        email = serializer.validated_data['email']
-        phone_number = serializer.validated_data['phone_number']
-        
-        otp_code = str(random.randint(100000, 999999))
-        OTPRecord.objects.create(email=email, otp_code=otp_code)
-        
+def send_otp_message(channel, target, code):
+    """Stub function to send OTP via SMS or Email"""
+    if channel == 'email':
         try:
             send_mail(
                 'Your Login OTP',
-                f'Your verification code is {otp_code}. It expires in 10 minutes.',
+                f'Your verification code is {code}. It expires in 5 minutes.',
                 settings.EMAIL_HOST_USER,
-                [email],
+                [target],
                 fail_silently=False,
             )
-            return Response({"message": "OTP sent to email"}, status=status.HTTP_200_OK)
+            print(f"[EMAIL STUB] Sent {code} to {target}")
+            return True
         except Exception as e:
-            return Response({"error": "Failed to send email", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            print(f"Email failed: {e}")
+            return False
+    elif channel == 'sms':
+        print(f"[SMS STUB] Sent OTP {code} to {target}")
+        return True
+    return False
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def request_otp(request):
+    serializer = OTPRequestSerializer(data=request.data)
+    if serializer.is_valid():
+        target = serializer.validated_data['target']
+        channel = serializer.validated_data['channel']
+        
+        otp_code = str(random.randint(100000, 999999))
+        expires_at = timezone.now() + timedelta(minutes=5)
+        
+        OTPRecord.objects.create(
+            target=target,
+            channel=channel,
+            otp_code=otp_code,
+            expires_at=expires_at
+        )
+        
+        success = send_otp_message(channel, target, otp_code)
+        if success:
+            return Response({"status": "sent", "message": f"OTP sent via {channel}"}, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "Failed to send OTP message"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def email_verify_otp(request):
+def verify_otp(request):
     serializer = OTPVerifySerializer(data=request.data)
     if serializer.is_valid():
-        email = serializer.validated_data['email']
-        phone_number = serializer.validated_data['phone_number']
+        target = serializer.validated_data['target']
         otp_code = serializer.validated_data['otp_code']
-        time_threshold = timezone.now() - timedelta(minutes=10)
         
         otp_record = OTPRecord.objects.filter(
-            email=email, otp_code=otp_code, is_verified=False, created_at__gte=time_threshold
+            target=target, 
+            otp_code=otp_code, 
+            is_verified=False,
+            expires_at__gt=timezone.now()
         ).last()
         
         if otp_record:
             otp_record.is_verified = True
             otp_record.save()
-            
-            user, created = CustomUser.objects.get_or_create(username=email, defaults={'email': email, 'phone_number': phone_number})
-            
-            if not created and user.phone_number != phone_number:
-                user.phone_number = phone_number
-                user.save()
-                
-            tokens = get_tokens_for_user(user)
-            # Set refresh token as HttpOnly cookie, return access in body
-            resp = Response({'access': tokens['access']}, status=status.HTTP_200_OK)
-            _set_refresh_cookie(resp, tokens['refresh'])
-            return resp
+            return Response({"status": "verified", "message": "OTP verified successfully"}, status=status.HTTP_200_OK)
         else:
-            return Response({"error": "Invalid or expired OTP"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "invalid_otp"}, status=status.HTTP_400_BAD_REQUEST)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_user(request):
-    username = request.data.get('username')
-    email = request.data.get('email')
-    password = request.data.get('password')
-    full_name = request.data.get('fullName', '')
-    role = request.data.get('role', 'citizen')
-    ward = request.data.get('ward', 'Shanti Nagar')
-    ward_number = request.data.get('wardNumber', 42)
-    phone_number = request.data.get('phone_number')
-
-    if not username or not password:
-        return Response({"error": "Username and password are required."}, status=status.HTTP_400_BAD_REQUEST)
-
-    if CustomUser.objects.filter(username=username).exists():
+    serializer = RegisterSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+    data = serializer.validated_data
+    phone = data['phone']
+    email = data['email']
+    
+    phone_verified = OTPRecord.objects.filter(target=phone, is_verified=True, expires_at__gt=timezone.now() - timedelta(days=1)).exists()
+    email_verified = OTPRecord.objects.filter(target=email, is_verified=True, expires_at__gt=timezone.now() - timedelta(days=1)).exists()
+    
+    if not phone_verified or not email_verified:
+        return Response({"error": "both phone and email must be verified"}, status=status.HTTP_400_BAD_REQUEST)
+        
+    if CustomUser.objects.filter(username=data['public_username']).exists():
         return Response({"error": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        
+    if CustomUser.objects.filter(phone_number=phone).exists():
+        return Response({"error": "Phone number already registered."}, status=status.HTTP_400_BAD_REQUEST)
 
-    first_name = ''
-    last_name = ''
-    if full_name:
-        parts = full_name.split(' ', 1)
-        first_name = parts[0]
-        if len(parts) > 1:
-            last_name = parts[1]
+    try:
+        ward = Ward.objects.get(id=data['ward_id'])
+    except Ward.DoesNotExist:
+        return Response({"error": "Invalid Ward ID"}, status=status.HTTP_400_BAD_REQUEST)
 
     user = CustomUser.objects.create_user(
-        username=username,
+        username=data['public_username'],
         email=email,
-        password=password,
-        first_name=first_name,
-        last_name=last_name,
-        role=role,
-        ward=ward,
-        ward_number=ward_number,
-        phone_number=phone_number
+        password=data['password'],
+        phone_number=phone,
+        is_phone_verified=True,
+        ward=ward
     )
     user.stats = {
         "issuesReported": 0,
@@ -161,25 +173,90 @@ def register_user(request):
         "verificationVotes": 0,
         "civicImpactScore": 10
     }
-    user.badges = [
-        {
-            "id": "badge-welcome",
-            "name": "Civic Pioneer",
-            "icon": "🌟",
-            "description": "Joined JanSeva community",
-            "unlockedAt": timezone.now().isoformat()
-        }
-    ]
+    user.badges = [{
+        "id": "badge-welcome",
+        "name": "Civic Pioneer",
+        "icon": "🌟",
+        "description": "Joined JanSeva community",
+        "unlockedAt": timezone.now().isoformat()
+    }]
     user.save()
 
+    Profile.objects.create(
+        user=user,
+        public_username=data['public_username'],
+        full_name=data['full_name'],
+        state_id=data.get('state_id'),
+        city_id=data.get('city_id'),
+        pincode=data.get('pincode'),
+        is_email_verified=True
+    )
+
     tokens = get_tokens_for_user(user)
-    # Set refresh token cookie and return access + user
     resp = Response({
         "user": CustomUserSerializer(user).data,
         "access": tokens['access']
     }, status=status.HTTP_201_CREATED)
     _set_refresh_cookie(resp, tokens['refresh'])
     return resp
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def user_login(request):
+    serializer = LoginSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+    data = serializer.validated_data
+    username = data.get('username')
+    phone = data.get('phone')
+    password = data.get('password')
+    
+    from django.contrib.auth import authenticate
+    user = None
+    if username:
+        user = authenticate(username=username, password=password)
+    elif phone:
+        try:
+            u = CustomUser.objects.get(phone_number=phone)
+            user = authenticate(username=u.username, password=password)
+        except CustomUser.DoesNotExist:
+            pass
+            
+    if user is not None:
+        tokens = get_tokens_for_user(user)
+        resp = Response({
+            "user": CustomUserSerializer(user).data,
+            "access": tokens['access']
+        }, status=status.HTTP_200_OK)
+        _set_refresh_cookie(resp, tokens['refresh'])
+        return resp
+    else:
+        return Response({"error": "invalid_credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_states(request):
+    states = State.objects.all()
+    return Response(StateSerializer(states, many=True).data, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_cities(request):
+    state_id = request.query_params.get('state')
+    cities = City.objects.all()
+    if state_id:
+        cities = cities.filter(state_id=state_id)
+    return Response(CitySerializer(cities, many=True).data, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_wards(request):
+    city_id = request.query_params.get('city')
+    wards = Ward.objects.all()
+    if city_id:
+        wards = wards.filter(city_id=city_id)
+    return Response(WardSerializer(wards, many=True).data, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
