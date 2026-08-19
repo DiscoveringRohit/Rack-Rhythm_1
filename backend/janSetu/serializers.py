@@ -1,14 +1,66 @@
 from rest_framework import serializers
-from .models import CustomUser, CivicIssue, Comment, NotificationItem
+from .models import CustomUser, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, OTPRecord
+
+class StateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = State
+        fields = ['id', 'name']
+
+class CitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = City
+        fields = ['id', 'name', 'state']
+
+class WardSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Ward
+        fields = ['id', 'name', 'ward_number', 'city', 'pincode']
+
+class ProfileSerializer(serializers.ModelSerializer):
+    state_name = serializers.CharField(source='state.name', read_only=True)
+    city_name = serializers.CharField(source='city.name', read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = ['public_username', 'full_name', 'state', 'state_name', 'city', 'city_name', 'pincode', 'is_email_verified']
+
+class CustomUserSerializer(serializers.ModelSerializer):
+    stats = serializers.JSONField(read_only=True)
+    badges = serializers.JSONField(read_only=True)
+    profile = ProfileSerializer(read_only=True)
+    ward_details = WardSerializer(source='ward', read_only=True)
+
+    class Meta:
+        model = CustomUser
+        fields = [
+            'id', 'username', 'email', 'phone_number', 'role', 'avatar', 
+            'ward', 'ward_details', 'karma_xp', 'level', 'level_title', 
+            'verified_citizen', 'aadhaar_linked', 'stats', 'badges', 'profile'
+        ]
 
 class OTPRequestSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-    phone_number = serializers.CharField(max_length=15)
+    target = serializers.CharField(max_length=255)
+    channel = serializers.ChoiceField(choices=['email', 'sms'])
 
 class OTPVerifySerializer(serializers.Serializer):
-    email = serializers.EmailField()
-    phone_number = serializers.CharField(max_length=15)
+    target = serializers.CharField(max_length=255)
     otp_code = serializers.CharField(max_length=6)
+
+class RegisterSerializer(serializers.Serializer):
+    phone = serializers.CharField(max_length=15)
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+    public_username = serializers.CharField(max_length=150)
+    full_name = serializers.CharField(max_length=255)
+    ward_id = serializers.IntegerField()
+    state_id = serializers.IntegerField(required=False)
+    city_id = serializers.IntegerField(required=False)
+    pincode = serializers.CharField(max_length=10, required=False)
+
+class LoginSerializer(serializers.Serializer):
+    username = serializers.CharField(required=False)
+    phone = serializers.CharField(required=False)
+    password = serializers.CharField(write_only=True)
 
 class ReporterSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
@@ -20,8 +72,9 @@ class ReporterSerializer(serializers.ModelSerializer):
         fields = ['name', 'avatar', 'isVerified', 'karma']
 
     def get_name(self, obj):
-        full_name = obj.get_full_name().strip()
-        return full_name if full_name else obj.username
+        if hasattr(obj, 'profile') and obj.profile.full_name:
+            return obj.profile.full_name
+        return obj.username
 
 class OfficerSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
@@ -33,20 +86,9 @@ class OfficerSerializer(serializers.ModelSerializer):
         fields = ['name', 'role', 'avatar', 'phone']
 
     def get_name(self, obj):
-        full_name = obj.get_full_name().strip()
-        return full_name if full_name else obj.username
-
-class CustomUserSerializer(serializers.ModelSerializer):
-    stats = serializers.JSONField(read_only=True)
-    badges = serializers.JSONField(read_only=True)
-
-    class Meta:
-        model = CustomUser
-        fields = [
-            'id', 'username', 'email', 'phone_number', 'role', 'avatar', 
-            'ward', 'ward_number', 'karma_xp', 'level', 'level_title', 
-            'verified_citizen', 'aadhaar_linked', 'stats', 'badges'
-        ]
+        if hasattr(obj, 'profile') and obj.profile.full_name:
+            return obj.profile.full_name
+        return obj.username
 
 class CommentSerializer(serializers.ModelSerializer):
     author_name = serializers.CharField(source='author.username', read_only=True)
@@ -105,4 +147,3 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = NotificationItem
         fields = ['id', 'title', 'message', 'notification_type', 'timestamp', 'read', 'issueId', 'actionUrl']
-

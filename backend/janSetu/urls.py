@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
-    hello_api, email_request_otp, email_verify_otp, register_user, user_profile,
+    hello_api, request_otp, verify_otp, register_user, user_profile, user_login,
+    get_states, get_cities, get_wards,
     issue_list_create, issue_detail, upvote_issue, verify_issue, update_issue_status,
     comment_list_create, notification_list, mark_notification_read, mark_all_notifications_read,
     CookieTokenObtainPairView, cookie_refresh, logout_view
@@ -10,12 +11,17 @@ from rest_framework_simplejwt.views import TokenRefreshView
 urlpatterns = [
     path("hello/", hello_api, name="hello_api"),
     
+    # Address lookup routes
+    path("address/states/", get_states, name="get_states"),
+    path("address/cities/", get_cities, name="get_cities"),
+    path("address/wards/", get_wards, name="get_wards"),
+    
     # Authentication routes
-    path("auth/login/", CookieTokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("auth/login/", user_login, name="user_login"),
     path("auth/register/", register_user, name="register_user"),
     path("auth/profile/", user_profile, name="user_profile"),
-    path("auth/login/request-otp/", email_request_otp, name="email_request_otp"),
-    path("auth/login/verify-otp/", email_verify_otp, name="email_verify_otp"),
+    path("auth/send-otp/", request_otp, name="request_otp"),
+    path("auth/verify-otp/", verify_otp, name="verify_otp"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("auth/token/refresh/cookie/", cookie_refresh, name="token_refresh_cookie"),
     path("auth/logout/", logout_view, name="auth_logout"),

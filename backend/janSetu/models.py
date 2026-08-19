@@ -11,8 +11,7 @@ class CustomUser(AbstractUser):
     is_phone_verified = models.BooleanField(default=False)
     role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='citizen')
     avatar = models.URLField(max_length=500, blank=True, null=True, default='https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80')
-    ward = models.CharField(max_length=100, blank=True, null=True, default='Shanti Nagar')
-    ward_number = models.IntegerField(blank=True, null=True, default=42)
+    ward = models.ForeignKey('Ward', on_delete=models.SET_NULL, null=True, blank=True)
     karma_xp = models.IntegerField(default=100)
     level = models.IntegerField(default=1)
     level_title = models.CharField(max_length=100, default='Active Citizen')
@@ -29,13 +28,15 @@ class CustomUser(AbstractUser):
         return self.username
 
 class OTPRecord(models.Model):
-    email = models.EmailField()
+    target = models.CharField(max_length=255)
+    channel = models.CharField(max_length=10, choices=[('email', 'Email'), ('sms', 'SMS')], default='email')
     otp_code = models.CharField(max_length=6)
     created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
     is_verified = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"{self.email} - {self.otp_code}"
+        return f"{self.target} - {self.otp_code}"
 
 class CivicIssue(models.Model):
     CATEGORY_CHOICES = [
@@ -114,3 +115,36 @@ class NotificationItem(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.title}"
 
+class State(models.Model):
+    name = models.CharField(max_length=100)
+
+    def __str__(self):
+        return self.name
+
+class City(models.Model):
+    name = models.CharField(max_length=100)
+    state = models.ForeignKey(State, on_delete=models.CASCADE, related_name='cities')
+
+    def __str__(self):
+        return self.name
+
+class Ward(models.Model):
+    name = models.CharField(max_length=100)
+    ward_number = models.IntegerField()
+    city = models.ForeignKey(City, on_delete=models.CASCADE, related_name='wards')
+    pincode = models.CharField(max_length=10, blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.name} (Ward {self.ward_number})"
+
+class Profile(models.Model):
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='profile')
+    public_username = models.CharField(max_length=150, unique=True)
+    full_name = models.CharField(max_length=255, blank=True, null=True)
+    state = models.ForeignKey(State, on_delete=models.SET_NULL, null=True, blank=True)
+    city = models.ForeignKey(City, on_delete=models.SET_NULL, null=True, blank=True)
+    pincode = models.CharField(max_length=10, blank=True, null=True)
+    is_email_verified = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.public_username
