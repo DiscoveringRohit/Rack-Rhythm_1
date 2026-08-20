@@ -89,7 +89,8 @@ def send_otp_message(channel, target, code):
             print(f"[EMAIL SENT] Sent OTP {code} to {target}")
             return True
         except Exception as e:
-            print(f"[EMAIL FAILED] Exception sending to {target}: {e}")
+            import traceback
+            print(f"[EMAIL FAILED] Exception sending to {target}: {e}\n{traceback.format_exc()}")
             return False
     elif channel == 'sms':
         print(f"[SMS STUB] Sent OTP {code} to {target}")
