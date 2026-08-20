@@ -62,20 +62,34 @@ def get_tokens_for_user(user):
     return {'refresh': str(refresh), 'access': str(refresh.access_token)}
 
 def send_otp_message(channel, target, code):
-    """Stub function to send OTP via SMS or Email"""
-    if channel == 'email':
+    """Function to send OTP via SMS or Email"""
+    if channel == 'email' or '@' in str(target):
         try:
+            subject = 'JanSeva - Your Verification Code'
+            message = f'Hello,\n\nYour JanSeva verification OTP is: {code}\n\nThis code will expire in 5 minutes.\n\nBest regards,\nJanSeva Team'
+            html_message = f'''
+            <div style="font-family: sans-serif; max-width: 500px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+                <h2 style="color: #4f46e5; margin-top: 0;">JanSeva Verification</h2>
+                <p style="color: #334155;">Hello,</p>
+                <p style="color: #334155;">Your verification code for JanSeva is:</p>
+                <div style="background: #f1f5f9; padding: 15px; text-align: center; border-radius: 8px; font-size: 28px; font-weight: bold; letter-spacing: 6px; color: #1e293b;">
+                    {code}
+                </div>
+                <p style="color: #64748b; font-size: 14px; margin-top: 20px;">This code will expire in 5 minutes. If you did not request this, please ignore this email.</p>
+            </div>
+            '''
             send_mail(
-                'Your Login OTP',
-                f'Your verification code is {code}. It expires in 5 minutes.',
+                subject,
+                message,
                 settings.EMAIL_HOST_USER,
                 [target],
                 fail_silently=False,
+                html_message=html_message
             )
-            print(f"[EMAIL STUB] Sent {code} to {target}")
+            print(f"[EMAIL SENT] Sent OTP {code} to {target}")
             return True
         except Exception as e:
-            print(f"Email failed: {e}")
+            print(f"[EMAIL FAILED] Exception sending to {target}: {e}")
             return False
     elif channel == 'sms':
         print(f"[SMS STUB] Sent OTP {code} to {target}")
@@ -89,6 +103,9 @@ def request_otp(request):
     if serializer.is_valid():
         target = serializer.validated_data['target']
         channel = serializer.validated_data['channel']
+        
+        if '@' in str(target):
+            channel = 'email'
         
         otp_code = str(random.randint(100000, 999999))
         expires_at = timezone.now() + timedelta(minutes=5)
@@ -104,7 +121,7 @@ def request_otp(request):
         if success:
             return Response({"status": "sent", "message": f"OTP sent via {channel}"}, status=status.HTTP_200_OK)
         else:
-            return Response({"error": "Failed to send OTP message"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": "Failed to send OTP email. Please check that your email is correct and try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
@@ -140,31 +157,44 @@ def register_user(request):
     data = serializer.validated_data
     phone = data['phone']
     email = data['email']
+    public_username = data.get('public_username') or email.split('@')[0]
+    full_name = data.get('full_name') or public_username
+    role = data.get('role', 'citizen')
+    department = data.get('department', '')
     
     phone_verified = OTPRecord.objects.filter(target=phone, is_verified=True, expires_at__gt=timezone.now() - timedelta(days=1)).exists()
     email_verified = OTPRecord.objects.filter(target=email, is_verified=True, expires_at__gt=timezone.now() - timedelta(days=1)).exists()
     
-    if not phone_verified or not email_verified:
-        return Response({"error": "both phone and email must be verified"}, status=status.HTTP_400_BAD_REQUEST)
+    if not phone_verified and not email_verified:
+        return Response({"error": "At least one of phone or email must be verified via OTP"}, status=status.HTTP_400_BAD_REQUEST)
         
-    if CustomUser.objects.filter(username=data['public_username']).exists():
+    if CustomUser.objects.filter(username=public_username).exists():
         return Response({"error": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
         
     if CustomUser.objects.filter(phone_number=phone).exists():
         return Response({"error": "Phone number already registered."}, status=status.HTTP_400_BAD_REQUEST)
 
-    try:
-        ward = Ward.objects.get(id=data['ward_id'])
-    except Ward.DoesNotExist:
-        return Response({"error": "Invalid Ward ID"}, status=status.HTTP_400_BAD_REQUEST)
+    ward_id = data.get('ward_id')
+    ward = None
+    if ward_id:
+        try:
+            ward = Ward.objects.get(id=ward_id)
+        except Ward.DoesNotExist:
+            ward = Ward.objects.first()
+    else:
+        ward = Ward.objects.first()
+
+    level_title = f"{department} Officer" if role == 'officer' and department else ('Officer' if role == 'officer' else 'Active Citizen')
 
     user = CustomUser.objects.create_user(
-        username=data['public_username'],
+        username=public_username,
         email=email,
         password=data['password'],
         phone_number=phone,
-        is_phone_verified=True,
-        ward=ward
+        is_phone_verified=phone_verified,
+        ward=ward,
+        role=role,
+        level_title=level_title
     )
     user.stats = {
         "issuesReported": 0,
@@ -184,12 +214,12 @@ def register_user(request):
 
     Profile.objects.create(
         user=user,
-        public_username=data['public_username'],
-        full_name=data['full_name'],
+        public_username=public_username,
+        full_name=full_name,
         state_id=data.get('state_id'),
         city_id=data.get('city_id'),
         pincode=data.get('pincode'),
-        is_email_verified=True
+        is_email_verified=email_verified
     )
 
     tokens = get_tokens_for_user(user)
@@ -216,11 +246,22 @@ def user_login(request):
     user = None
     if username:
         user = authenticate(username=username, password=password)
+        if not user:
+            try:
+                if '@' in username:
+                    u = CustomUser.objects.filter(email=username).first()
+                else:
+                    u = CustomUser.objects.filter(Q(username=username) | Q(phone_number=username)).first()
+                if u:
+                    user = authenticate(username=u.username, password=password)
+            except Exception:
+                pass
     elif phone:
         try:
-            u = CustomUser.objects.get(phone_number=phone)
-            user = authenticate(username=u.username, password=password)
-        except CustomUser.DoesNotExist:
+            u = CustomUser.objects.filter(phone_number=phone).first()
+            if u:
+                user = authenticate(username=u.username, password=password)
+        except Exception:
             pass
             
     if user is not None:
