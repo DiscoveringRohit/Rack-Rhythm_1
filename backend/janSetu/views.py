@@ -81,33 +81,11 @@ def send_otp_message(channel, target, code):
             '''
             # Support HTTP APIs (Resend/Brevo) to bypass cloud SMTP port blocks
             resend_api_key = os.environ.get('RESEND_API_KEY')
-            brevo_api_key = os.environ.get('BREVO_API_KEY')
-            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER)
+            brevo_api_key = os.environ.get('BREVO_API_KEY') or os.environ.get('EMAIL_HOST_PASSWORD')
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER) or 'ommjena77@gmail.com'
 
-            if resend_api_key:
-                import requests
-                print("[EMAIL] Attempting delivery via Resend HTTP API...")
-                resp = requests.post(
-                    "https://api.resend.com/emails",
-                    headers={
-                        "Authorization": f"Bearer {resend_api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "from": f"JanSeva <{from_email}>" if "onboarding@resend.dev" in from_email else from_email,
-                        "to": [target],
-                        "subject": subject,
-                        "html": html_message
-                    },
-                    timeout=8
-                )
-                if resp.status_code in [200, 201, 202]:
-                    print(f"[EMAIL SENT] Sent OTP {code} via Resend HTTP API to {target}")
-                    return True
-                else:
-                    print(f"[EMAIL FAILED] Resend API error: {resp.status_code} - {resp.text}")
-
-            elif brevo_api_key:
+            # Force Brevo HTTP API if key is available
+            if brevo_api_key and brevo_api_key.startswith('xkeysib-'):
                 import requests
                 print("[EMAIL] Attempting delivery via Brevo HTTP API...")
                 resp = requests.post(
@@ -129,6 +107,31 @@ def send_otp_message(channel, target, code):
                     return True
                 else:
                     print(f"[EMAIL FAILED] Brevo API error: {resp.status_code} - {resp.text}")
+                    return False
+
+            elif resend_api_key:
+                import requests
+                print("[EMAIL] Attempting delivery via Resend HTTP API...")
+                resp = requests.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {resend_api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "from": f"JanSeva <{from_email}>" if "onboarding@resend.dev" in from_email else from_email,
+                        "to": [target],
+                        "subject": subject,
+                        "html": html_message
+                    },
+                    timeout=8
+                )
+                if resp.status_code in [200, 201, 202]:
+                    print(f"[EMAIL SENT] Sent OTP {code} via Resend HTTP API to {target}")
+                    return True
+                else:
+                    print(f"[EMAIL FAILED] Resend API error: {resp.status_code} - {resp.text}")
+                    return False
 
             # Default: Fall back to SMTP
             print("[EMAIL] Attempting delivery via Django SMTP...")
