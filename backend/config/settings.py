@@ -31,7 +31,7 @@ except ImportError:
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-!)_h3cd0%(0o2-$k9q=$pdu%%e76udto2(mv)6py+e(h4nxp(t')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True').lower() not in ('false', '0', 'no')
 
 ALLOWED_HOSTS = ['*']
 
