@@ -85,7 +85,7 @@ def send_otp_message(channel, target, code):
             from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER) or 'rackrhythm@gmail.com'
 
             # Force Brevo HTTP API if key is available
-            if brevo_api_key and brevo_api_key.startswith('xkeysib-'):
+            if brevo_api_key and (brevo_api_key.startswith('xkeysib-') or brevo_api_key.startswith('xsmtpsib-') or 'brevo' in str(settings.EMAIL_HOST).lower()):
                 import requests
                 print("[EMAIL] Attempting delivery via Brevo HTTP API...")
                 resp = requests.post(
