@@ -194,27 +194,27 @@ EMAIL_HOST = os.environ.get(
     'smtp.gmail.com'
 )
 
-EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '465'))
 
 EMAIL_USE_TLS = os.environ.get(
     'EMAIL_USE_TLS',
-    'True'
+    'False'
 ).lower() == 'true'
 
 EMAIL_USE_SSL = os.environ.get(
     'EMAIL_USE_SSL',
-    'False'
+    'True'
 ).lower() == 'true'
 
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '10'))
 
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'rackrhythm@gmail.com')
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'ommjena77@gmail.com')
 
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'swef zzyp qfit dhef')
 
 DEFAULT_FROM_EMAIL = os.environ.get(
     'DEFAULT_FROM_EMAIL',
-    'rackrhythm@gmail.com'
+    'ommjena77@gmail.com'
 )
 
 # CORS & CSRF Configuration
