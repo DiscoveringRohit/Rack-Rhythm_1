@@ -22,7 +22,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ['public_username', 'full_name', 'state', 'state_name', 'city', 'city_name', 'pincode', 'is_email_verified']
+        fields = ['public_username', 'full_name', 'state', 'state_name', 'city', 'city_name', 'pincode', 'is_email_verified', 'number']
 
 class CustomUserSerializer(serializers.ModelSerializer):
     stats = serializers.JSONField(read_only=True)
@@ -100,7 +100,7 @@ class CommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Comment
         fields = ['id', 'issue', 'author', 'author_name', 'author_avatar', 'text', 'created_at']
-        read_only_fields = ['author']
+        read_only_fields = ['author', 'issue']
 
 class CivicIssueSerializer(serializers.ModelSerializer):
     reporter = ReporterSerializer(read_only=True)

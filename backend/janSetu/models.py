@@ -152,6 +152,7 @@ class Profile(models.Model):
     state = models.ForeignKey(State, on_delete=models.SET_NULL, null=True, blank=True)
     city = models.ForeignKey(City, on_delete=models.SET_NULL, null=True, blank=True)
     pincode = models.CharField(max_length=10, blank=True, null=True)
+    number = models.CharField(max_length=20, blank=True, null=True)
     is_email_verified = models.BooleanField(default=False)
 
     def __str__(self):

@@ -272,7 +272,8 @@ def register_user(request):
         public_username=public_username,
         full_name=full_name,
         pincode=pincode,
-        is_email_verified=email_verified
+        is_email_verified=email_verified,
+        number=phone
     )
 
     tokens = get_tokens_for_user(user)
