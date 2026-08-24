@@ -82,7 +82,7 @@ def send_otp_message(channel, target, code):
             # Support HTTP APIs (Resend/Brevo) to bypass cloud SMTP port blocks
             resend_api_key = os.environ.get('RESEND_API_KEY')
             brevo_api_key = os.environ.get('BREVO_API_KEY') or os.environ.get('EMAIL_HOST_PASSWORD')
-            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER) or 'ommjena77@gmail.com'
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER) or 'rackrhythm@gmail.com'
 
             # Force Brevo HTTP API if key is available
             if brevo_api_key and brevo_api_key.startswith('xkeysib-'):
@@ -213,34 +213,28 @@ def register_user(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
     data = serializer.validated_data
-    phone = data['phone']
+    phone = data.get('phone', '')
     email = data['email']
     public_username = data.get('public_username') or email.split('@')[0]
     full_name = data.get('full_name') or public_username
+    gender = data.get('gender', '')
     role = data.get('role', 'citizen')
     department = data.get('department', '')
+    state_str = data.get('state', '')
+    city_str = data.get('city', '')
+    pincode = data.get('pincode', '')
     
-    phone_verified = OTPRecord.objects.filter(target=phone, is_verified=True, expires_at__gt=timezone.now() - timedelta(days=1)).exists()
     email_verified = OTPRecord.objects.filter(target=email, is_verified=True, expires_at__gt=timezone.now() - timedelta(days=1)).exists()
     
-    if not phone_verified and not email_verified:
-        return Response({"error": "At least one of phone or email must be verified via OTP"}, status=status.HTTP_400_BAD_REQUEST)
+    if not email_verified:
+        return Response({"error": "Email must be verified via OTP"}, status=status.HTTP_400_BAD_REQUEST)
         
     if CustomUser.objects.filter(username=public_username).exists():
         return Response({"error": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
         
-    if CustomUser.objects.filter(phone_number=phone).exists():
-        return Response({"error": "Phone number already registered."}, status=status.HTTP_400_BAD_REQUEST)
-
-    ward_id = data.get('ward_id')
-    ward = None
-    if ward_id:
-        try:
-            ward = Ward.objects.get(id=ward_id)
-        except Ward.DoesNotExist:
-            ward = Ward.objects.first()
-    else:
-        ward = Ward.objects.first()
+    # TODO: Uncomment this phone uniqueness check for production
+    # if phone and CustomUser.objects.filter(phone_number=phone).exists():
+    #     return Response({"error": "Phone number already registered."}, status=status.HTTP_400_BAD_REQUEST)
 
     level_title = f"{department} Officer" if role == 'officer' and department else ('Officer' if role == 'officer' else 'Active Citizen')
 
@@ -249,8 +243,11 @@ def register_user(request):
         email=email,
         password=data['password'],
         phone_number=phone,
-        is_phone_verified=phone_verified,
-        ward=ward,
+        gender=gender,
+        pin_code=pincode,
+        state=state_str,
+        city=city_str,
+        is_phone_verified=False,
         role=role,
         level_title=level_title
     )
@@ -274,9 +271,7 @@ def register_user(request):
         user=user,
         public_username=public_username,
         full_name=full_name,
-        state_id=data.get('state_id'),
-        city_id=data.get('city_id'),
-        pincode=data.get('pincode'),
+        pincode=pincode,
         is_email_verified=email_verified
     )
 
@@ -357,11 +352,19 @@ def get_wards(request):
         wards = wards.filter(city_id=city_id)
     return Response(WardSerializer(wards, many=True).data, status=status.HTTP_200_OK)
 
-@api_view(['GET'])
+@api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def user_profile(request):
-    serializer = CustomUserSerializer(request.user)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    if request.method == 'GET':
+        serializer = CustomUserSerializer(request.user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    elif request.method == 'PATCH':
+        serializer = CustomUserSerializer(request.user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
@@ -407,11 +410,15 @@ def issue_list_create(request):
     if request.method == 'GET':
         category = request.query_params.get('category')
         status_param = request.query_params.get('status')
-        issues = CivicIssue.objects.all().order_by('-created_at')
+        pincode = request.query_params.get('pincode')
+        
+        issues = CivicIssue.objects.filter(is_hidden_from_map=False).order_by('-created_at')
         if category and category != 'all':
             issues = issues.filter(category=category)
         if status_param and status_param != 'all':
             issues = issues.filter(status=status_param)
+        if pincode:
+            issues = issues.filter(pin_code=pincode)
             
         serializer = CivicIssueSerializer(issues, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -439,8 +446,8 @@ def issue_list_create(request):
         if serializer.is_valid():
             issue = serializer.save(reporter=request.user)
             
-            # Give user Karma XP
-            request.user.karma_xp += 50
+            # Give user Civic Citizen XP
+            request.user.civic_citizen_xp = (request.user.civic_citizen_xp or 0) + 50
             stats = request.user.stats or {}
             stats["issuesReported"] = stats.get("issuesReported", 0) + 1
             request.user.stats = stats
@@ -459,7 +466,7 @@ def issue_list_create(request):
             return Response(CivicIssueSerializer(issue, context={'request': request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['GET'])
+@api_view(['GET', 'DELETE'])
 @permission_classes([AllowAny])
 def issue_detail(request, pk):
     try:
@@ -467,8 +474,18 @@ def issue_detail(request, pk):
     except CivicIssue.DoesNotExist:
         return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
         
-    serializer = CivicIssueSerializer(issue, context={'request': request})
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    if request.method == 'GET':
+        serializer = CivicIssueSerializer(issue, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+    elif request.method == 'DELETE':
+        if not request.user.is_authenticated:
+            return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
+        if request.user != issue.reporter and request.user.role not in ['officer', 'corporator']:
+            return Response({"error": "You do not have permission to delete this post."}, status=status.HTTP_403_FORBIDDEN)
+            
+        issue.delete()
+        return Response({"status": "deleted"}, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -488,7 +505,7 @@ def upvote_issue(request, pk):
         issue.upvotes += 1
         issue.save()
         
-        request.user.karma_xp += 5
+        request.user.civic_citizen_xp = (request.user.civic_citizen_xp or 0) + 5
         stats = request.user.stats or {}
         stats["upvotesGiven"] = stats.get("upvotesGiven", 0) + 1
         request.user.stats = stats
@@ -529,9 +546,27 @@ def verify_issue(request, pk):
     users_dict[user_id_str] = vote
     votes["users"] = users_dict
     issue.verification_votes = votes
+    
+    if votes["yes"] >= 1 and issue.status == 'Pending Citizen Verification':
+        issue.status = 'Verified Resolved'
+        issue.is_hidden_from_map = True
+        images = issue.images or {}
+        if 'resolved' not in images:
+            images['resolved'] = "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80"
+            issue.images = images
+        
+        timeline = issue.timeline or []
+        timeline.append({
+            "stage": "Verified Resolved",
+            "timestamp": timezone.now().isoformat(),
+            "note": "Community verified the issue as resolved.",
+            "actor": "Community"
+        })
+        issue.timeline = timeline
+    
     issue.save()
     
-    request.user.karma_xp += 15
+    request.user.civic_citizen_xp = (request.user.civic_citizen_xp or 0) + 15
     stats = request.user.stats or {}
     stats["verificationVotes"] = stats.get("verificationVotes", 0) + 1
     request.user.stats = stats
@@ -541,7 +576,7 @@ def verify_issue(request, pk):
         "yes": votes["yes"],
         "no": votes["no"],
         "userVoted": vote
-    }}, status=status.HTTP_200_OK)
+    }, "issueStatus": issue.status}, status=status.HTTP_200_OK)
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
@@ -557,8 +592,13 @@ def update_issue_status(request, pk):
     new_status = request.data.get('status')
     note = request.data.get('note', '')
     
-    if new_status not in ['Reported', 'AI Verified', 'Assigned', 'In Progress', 'Resolved']:
+    if new_status not in ['Reported', 'AI Verified', 'Assigned', 'In Progress', 'Resolved', 'Pending Citizen Verification', 'Verified Resolved']:
         return Response({"error": "Invalid status value."}, status=status.HTTP_400_BAD_REQUEST)
+        
+    # Implement Closed-Loop Resolution Logic
+    if new_status == 'Resolved':
+        new_status = 'Pending Citizen Verification'
+        note = note or f"Officer marked as Resolved. Pending Community Verification."
         
     issue.status = new_status
     timeline = issue.timeline or []
@@ -570,7 +610,8 @@ def update_issue_status(request, pk):
     })
     issue.timeline = timeline
     
-    if new_status == 'Resolved':
+    if new_status == 'Verified Resolved':
+        issue.is_hidden_from_map = True
         images = issue.images or {}
         if 'resolved' not in images:
             images['resolved'] = "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80"
@@ -638,3 +679,60 @@ def mark_notification_read(request, pk):
 def mark_all_notifications_read(request):
     request.user.notifications.filter(read=False).update(read=True)
     return Response({"status": "success"}, status=status.HTTP_200_OK)
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def google_login(request):
+    token = request.data.get('token')
+    if not token:
+        return Response({"error": "No token provided"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        idinfo = id_token.verify_oauth2_token(token, google_requests.Request())
+        
+        email = idinfo.get('email')
+        name = idinfo.get('name')
+        avatar = idinfo.get('picture')
+        
+        if not email:
+            return Response({"error": "Google token does not contain email"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        user = CustomUser.objects.filter(email=email).first()
+        
+        if not user:
+            username = email.split('@')[0]
+            base_username = username
+            counter = 1
+            while CustomUser.objects.filter(username=username).exists():
+                username = f"{base_username}{counter}"
+                counter += 1
+                
+            user = CustomUser.objects.create(
+                username=username,
+                email=email,
+                role='citizen',
+                avatar=avatar or 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+                first_name=name.split(' ')[0] if name else '',
+                last_name=' '.join(name.split(' ')[1:]) if name and ' ' in name else ''
+            )
+            user.set_unusable_password()
+            user.save()
+            
+        tokens = get_tokens_for_user(user)
+        
+        resp = Response(tokens, status=status.HTTP_200_OK)
+        resp.set_cookie(
+            'janseva_refresh',
+            tokens['refresh'],
+            max_age=60*60*24*7, # 7 days
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite='Lax',
+            path='/'
+        )
+        return resp
+        
+    except ValueError as e:
+        return Response({"error": "Invalid Google token", "details": str(e)}, status=status.HTTP_401_UNAUTHORIZED)

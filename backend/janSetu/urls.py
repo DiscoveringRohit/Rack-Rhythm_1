@@ -4,7 +4,7 @@ from .views import (
     get_states, get_cities, get_wards,
     issue_list_create, issue_detail, upvote_issue, verify_issue, update_issue_status,
     comment_list_create, notification_list, mark_notification_read, mark_all_notifications_read,
-    CookieTokenObtainPairView, cookie_refresh, logout_view
+    CookieTokenObtainPairView, cookie_refresh, logout_view, google_login
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -24,6 +24,7 @@ urlpatterns = [
     path("auth/verify-otp/", verify_otp, name="verify_otp"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("auth/token/refresh/cookie/", cookie_refresh, name="token_refresh_cookie"),
+    path("auth/google/", google_login, name="google_login"),
     path("auth/logout/", logout_view, name="auth_logout"),
     
     # Issues routes
