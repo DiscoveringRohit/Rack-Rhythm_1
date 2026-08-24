@@ -34,8 +34,9 @@ class CustomUserSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'id', 'username', 'email', 'phone_number', 'role', 'avatar', 
-            'ward', 'ward_details', 'karma_xp', 'level', 'level_title', 
-            'verified_citizen', 'aadhaar_linked', 'stats', 'badges', 'profile'
+            'ward', 'ward_details', 'civic_citizen_xp', 'level', 'level_title', 
+            'verified_citizen', 'aadhaar_linked', 'stats', 'badges', 'profile',
+            'gender', 'pin_code', 'state', 'city'
         ]
 
 class OTPRequestSerializer(serializers.Serializer):
@@ -47,17 +48,17 @@ class OTPVerifySerializer(serializers.Serializer):
     otp_code = serializers.CharField(max_length=6)
 
 class RegisterSerializer(serializers.Serializer):
-    phone = serializers.CharField(max_length=15)
+    phone = serializers.CharField(max_length=15, required=False, allow_blank=True)
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
     public_username = serializers.CharField(max_length=150, required=False)
     full_name = serializers.CharField(max_length=255, required=False)
+    gender = serializers.CharField(max_length=20, required=False, allow_blank=True)
     role = serializers.CharField(max_length=15, required=False, default='citizen')
     department = serializers.CharField(max_length=100, required=False, allow_blank=True)
-    ward_id = serializers.IntegerField(required=False)
-    state_id = serializers.IntegerField(required=False)
-    city_id = serializers.IntegerField(required=False)
-    pincode = serializers.CharField(max_length=10, required=False)
+    state = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    city = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    pincode = serializers.CharField(max_length=10, required=False, allow_blank=True)
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField(required=False)
@@ -67,7 +68,7 @@ class LoginSerializer(serializers.Serializer):
 class ReporterSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     isVerified = serializers.BooleanField(source='verified_citizen')
-    karma = serializers.IntegerField(source='karma_xp')
+    karma = serializers.IntegerField(source='civic_citizen_xp')
 
     class Meta:
         model = CustomUser
@@ -109,14 +110,16 @@ class CivicIssueSerializer(serializers.ModelSerializer):
     verificationVotes = serializers.SerializerMethodField()
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
+    aiAnalysis = serializers.JSONField(source='ai_analysis', required=False, allow_null=True)
+    assignedDepartment = serializers.CharField(source='assigned_department', required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = CivicIssue
         fields = [
             'id', 'title', 'description', 'category', 'status', 'urgency',
-            'location', 'reporter', 'images', 'ai_analysis', 'assigned_department',
+            'location', 'pin_code', 'reporter', 'images', 'aiAnalysis', 'assignedDepartment',
             'assignedOfficer', 'timeline', 'upvotes', 'isUpvoted', 'commentsCount',
-            'verificationVotes', 'createdAt', 'updatedAt'
+            'verificationVotes', 'is_hidden_from_map', 'createdAt', 'updatedAt'
         ]
 
     def get_isUpvoted(self, obj):

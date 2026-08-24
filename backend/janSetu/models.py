@@ -10,9 +10,13 @@ class CustomUser(AbstractUser):
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
     is_phone_verified = models.BooleanField(default=False)
     role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='citizen')
-    avatar = models.URLField(max_length=500, blank=True, null=True, default='https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80')
+    avatar = models.TextField(blank=True, null=True, default='https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80')
     ward = models.ForeignKey('Ward', on_delete=models.SET_NULL, null=True, blank=True)
-    karma_xp = models.IntegerField(default=100)
+    gender = models.CharField(max_length=20, blank=True, null=True)
+    pin_code = models.CharField(max_length=10, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    civic_citizen_xp = models.IntegerField(default=100)
     level = models.IntegerField(default=1)
     level_title = models.CharField(max_length=100, default='Active Citizen')
     verified_citizen = models.BooleanField(default=True)
@@ -54,6 +58,8 @@ class CivicIssue(models.Model):
         ('Assigned', 'Assigned'),
         ('In Progress', 'In Progress'),
         ('Resolved', 'Resolved'),
+        ('Pending Citizen Verification', 'Pending Citizen Verification'),
+        ('Verified Resolved', 'Verified Resolved'),
     ]
     URGENCY_CHOICES = [
         ('Critical', 'Critical'),
@@ -66,11 +72,12 @@ class CivicIssue(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField()
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Reported')
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Reported')
     urgency = models.CharField(max_length=20, choices=URGENCY_CHOICES)
     
     # Nested field JSON mappings
     location = models.JSONField() # {"address": str, "ward": str, "wardNumber": int, "lat": float, "lng": float}
+    pin_code = models.CharField(max_length=10, blank=True, null=True) # Explicitly linking to PIN code for hyperlocal filtering
     reporter = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='reported_issues')
     images = models.JSONField() # {"reported": str, "resolved": str (optional)}
     ai_analysis = models.JSONField(blank=True, null=True) # classifier fields
@@ -86,6 +93,7 @@ class CivicIssue(models.Model):
     comments_count = models.IntegerField(default=0)
     
     verification_votes = models.JSONField(default=dict, blank=True) # {"yes": int, "no": int, "users": list}
+    is_hidden_from_map = models.BooleanField(default=False)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
