@@ -39,6 +39,11 @@ class OTPRecord(models.Model):
     expires_at = models.DateTimeField(null=True, blank=True)
     is_verified = models.BooleanField(default=False)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['target', 'is_verified', 'expires_at']),
+        ]
+
     def __str__(self):
         return f"{self.target} - {self.otp_code}"
 

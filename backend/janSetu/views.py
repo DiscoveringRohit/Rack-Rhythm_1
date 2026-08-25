@@ -63,9 +63,10 @@ def get_tokens_for_user(user):
     return {'refresh': str(refresh), 'access': str(refresh.access_token)}
 
 def send_otp_message(channel, target, code):
-    """Function to send OTP via SMS or Email"""
+    """Function to send OTP via Brevo HTTP API with fallback to Django SMTP."""
     if channel == 'email' or '@' in str(target):
         try:
+            print(f"[OTP] Request received for target email")
             subject = 'JanSeva - Your Verification Code'
             message = f'Hello,\n\nYour JanSeva verification OTP is: {code}\n\nThis code will expire in 5 minutes.\n\nBest regards,\nJanSeva Team'
             html_message = f'''
@@ -79,15 +80,13 @@ def send_otp_message(channel, target, code):
                 <p style="color: #64748b; font-size: 14px; margin-top: 20px;">This code will expire in 5 minutes. If you did not request this, please ignore this email.</p>
             </div>
             '''
-            # Support HTTP APIs (Resend/Brevo) to bypass cloud SMTP port blocks
-            resend_api_key = os.environ.get('RESEND_API_KEY')
-            brevo_api_key = os.environ.get('BREVO_API_KEY') or os.environ.get('EMAIL_HOST_PASSWORD')
-            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER) or 'rackrhythm@gmail.com'
+            
+            brevo_api_key = getattr(settings, 'BREVO_API_KEY', None) or os.environ.get('BREVO_API_KEY')
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or os.environ.get('DEFAULT_FROM_EMAIL', 'ommjena77@gmail.com')
 
-            # Force Brevo HTTP API if key is available
-            if brevo_api_key and (brevo_api_key.startswith('xkeysib-') or brevo_api_key.startswith('xsmtpsib-')):
+            if brevo_api_key:
                 import requests
-                print("[EMAIL] Attempting delivery via Brevo HTTP API...")
+                print("[OTP] Sending via Brevo HTTP API...")
                 try:
                     resp = requests.post(
                         "https://api.brevo.com/v3/smtp/email",
@@ -101,58 +100,36 @@ def send_otp_message(channel, target, code):
                             "subject": subject,
                             "htmlContent": html_message
                         },
-                        timeout=8
+                        timeout=10
                     )
+                    print(f"[OTP] Brevo response status: {resp.status_code}")
                     if resp.status_code in [200, 201, 202]:
-                        print(f"[EMAIL SENT] Sent OTP {code} via Brevo HTTP API to {target}")
+                        print("[OTP] Delivery accepted")
                         return True
                     else:
-                        print(f"[EMAIL FAILED] Brevo API error: {resp.status_code} - {resp.text}. Falling back to SMTP...")
+                        print("[OTP] Delivery failed")
+                        return False
                 except Exception as api_err:
-                    print(f"[EMAIL FAILED] Brevo API exception: {api_err}. Falling back to SMTP...")
-
-            elif resend_api_key:
-                import requests
-                print("[EMAIL] Attempting delivery via Resend HTTP API...")
-                resp = requests.post(
-                    "https://api.resend.com/emails",
-                    headers={
-                        "Authorization": f"Bearer {resend_api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "from": f"JanSeva <{from_email}>" if "onboarding@resend.dev" in from_email else from_email,
-                        "to": [target],
-                        "subject": subject,
-                        "html": html_message
-                    },
-                    timeout=8
-                )
-                if resp.status_code in [200, 201, 202]:
-                    print(f"[EMAIL SENT] Sent OTP {code} via Resend HTTP API to {target}")
-                    return True
-                else:
-                    print(f"[EMAIL FAILED] Resend API error: {resp.status_code} - {resp.text}")
+                    print(f"[OTP] Brevo API exception: {api_err}")
                     return False
-
-            # Default: Fall back to SMTP
-            print("[EMAIL] Attempting delivery via Django SMTP...")
-            send_mail(
-                subject,
-                message,
-                from_email,
-                [target],
-                fail_silently=False,
-                html_message=html_message
-            )
-            print(f"[EMAIL SENT] Sent OTP {code} to {target}")
-            return True
+            else:
+                # Default fallback: Django SMTP if BREVO_API_KEY is not set
+                print("[OTP] BREVO_API_KEY not configured, attempting delivery via Django SMTP...")
+                send_mail(
+                    subject,
+                    message,
+                    from_email,
+                    [target],
+                    fail_silently=False,
+                    html_message=html_message
+                )
+                print("[OTP] Delivery accepted via SMTP")
+                return True
         except Exception as e:
-            import traceback
-            print(f"[EMAIL FAILED] Exception sending to {target}: {e}\n{traceback.format_exc()}")
+            print(f"[OTP] Delivery failed with exception: {type(e).__name__}")
             return False
     elif channel == 'sms':
-        print(f"[SMS STUB] Sent OTP {code} to {target}")
+        print(f"[OTP] SMS channel stub called")
         return True
     return False
 
@@ -167,6 +144,9 @@ def request_otp(request):
         if '@' in str(target):
             channel = 'email'
         
+        # Invalidate previous unverified OTP records for target
+        OTPRecord.objects.filter(target=target, is_verified=False).delete()
+        
         otp_code = str(random.randint(100000, 999999))
         expires_at = timezone.now() + timedelta(minutes=5)
         
@@ -176,10 +156,13 @@ def request_otp(request):
             otp_code=otp_code,
             expires_at=expires_at
         )
+        print("[OTP] OTP stored in database")
         
-        import threading
-        threading.Thread(target=send_otp_message, args=(channel, target, otp_code), daemon=True).start()
-        return Response({"status": "sent", "message": f"OTP sent via {channel}"}, status=status.HTTP_200_OK)
+        success = send_otp_message(channel, target, otp_code)
+        if success:
+            return Response({"status": "sent", "message": f"OTP delivery accepted via {channel}"}, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "Failed to deliver OTP email. Please check Brevo API configuration and try again."}, status=status.HTTP_400_BAD_REQUEST)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
@@ -195,14 +178,14 @@ def verify_otp(request):
             otp_code=otp_code, 
             is_verified=False,
             expires_at__gt=timezone.now()
-        ).last()
+        ).order_by('-created_at').first()
         
         if otp_record:
             otp_record.is_verified = True
             otp_record.save()
             return Response({"status": "verified", "message": "OTP verified successfully"}, status=status.HTTP_200_OK)
         else:
-            return Response({"error": "invalid_otp"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "invalid_otp", "message": "Invalid or expired OTP code"}, status=status.HTTP_400_BAD_REQUEST)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
@@ -224,17 +207,13 @@ def register_user(request):
     city_str = data.get('city', '')
     pincode = data.get('pincode', '')
     
-    email_verified = OTPRecord.objects.filter(target=email, is_verified=True, expires_at__gt=timezone.now() - timedelta(days=1)).exists()
+    otp_valid = OTPRecord.objects.filter(target=email, is_verified=True, expires_at__gt=timezone.now() - timedelta(minutes=15)).exists()
     
-    if not email_verified:
-        return Response({"error": "Email must be verified via OTP"}, status=status.HTTP_400_BAD_REQUEST)
+    if not otp_valid:
+        return Response({"error": "Email must be verified via OTP before registration."}, status=status.HTTP_400_BAD_REQUEST)
         
     if CustomUser.objects.filter(username=public_username).exists():
         return Response({"error": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
-        
-    # TODO: Uncomment this phone uniqueness check for production
-    # if phone and CustomUser.objects.filter(phone_number=phone).exists():
-    #     return Response({"error": "Phone number already registered."}, status=status.HTTP_400_BAD_REQUEST)
 
     level_title = f"{department} Officer" if role == 'officer' and department else ('Officer' if role == 'officer' else 'Active Citizen')
 
@@ -272,9 +251,12 @@ def register_user(request):
         public_username=public_username,
         full_name=full_name,
         pincode=pincode,
-        is_email_verified=email_verified,
+        is_email_verified=True,
         number=phone
     )
+
+    # Consume verified OTP so it cannot be reused
+    OTPRecord.objects.filter(target=email).delete()
 
     tokens = get_tokens_for_user(user)
     resp = Response({
@@ -292,32 +274,20 @@ def user_login(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
     data = serializer.validated_data
-    username = data.get('username')
-    phone = data.get('phone')
+    identifier = data.get('username') or data.get('phone')
     password = data.get('password')
     
     from django.contrib.auth import authenticate
     user = None
-    if username:
-        user = authenticate(username=username, password=password)
-        if not user:
-            try:
-                if '@' in username:
-                    u = CustomUser.objects.filter(email=username).first()
-                else:
-                    u = CustomUser.objects.filter(Q(username=username) | Q(phone_number=username)).first()
-                if u:
-                    user = authenticate(username=u.username, password=password)
-            except Exception:
-                pass
-    elif phone:
-        try:
-            u = CustomUser.objects.filter(phone_number=phone).first()
-            if u:
-                user = authenticate(username=u.username, password=password)
-        except Exception:
-            pass
-            
+    if identifier:
+        # Fast single DB query lookup by username, email, or phone
+        user_obj = CustomUser.objects.filter(
+            Q(username=identifier) | Q(email=identifier) | Q(phone_number=identifier)
+        ).first()
+        
+        if user_obj:
+            user = authenticate(username=user_obj.username, password=password)
+
     if user is not None:
         tokens = get_tokens_for_user(user)
         resp = Response({
@@ -327,7 +297,7 @@ def user_login(request):
         _set_refresh_cookie(resp, tokens['refresh'])
         return resp
     else:
-        return Response({"error": "invalid_credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({"error": "invalid_credentials", "message": "Invalid username, email, or password."}, status=status.HTTP_401_UNAUTHORIZED)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])

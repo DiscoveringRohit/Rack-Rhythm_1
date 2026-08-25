@@ -212,6 +212,8 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'ommjena77@gmail.com')
 
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'swef zzyp qfit dhef')
 
+BREVO_API_KEY = os.environ.get('BREVO_API_KEY')
+
 DEFAULT_FROM_EMAIL = os.environ.get(
     'DEFAULT_FROM_EMAIL',
     'ommjena77@gmail.com'
