@@ -85,29 +85,31 @@ def send_otp_message(channel, target, code):
             from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', settings.EMAIL_HOST_USER) or 'rackrhythm@gmail.com'
 
             # Force Brevo HTTP API if key is available
-            if brevo_api_key and (brevo_api_key.startswith('xkeysib-') or brevo_api_key.startswith('xsmtpsib-') or 'brevo' in str(settings.EMAIL_HOST).lower()):
+            if brevo_api_key and (brevo_api_key.startswith('xkeysib-') or brevo_api_key.startswith('xsmtpsib-')):
                 import requests
                 print("[EMAIL] Attempting delivery via Brevo HTTP API...")
-                resp = requests.post(
-                    "https://api.brevo.com/v3/smtp/email",
-                    headers={
-                        "api-key": brevo_api_key,
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "sender": {"name": "JanSeva", "email": from_email},
-                        "to": [{"email": target}],
-                        "subject": subject,
-                        "htmlContent": html_message
-                    },
-                    timeout=8
-                )
-                if resp.status_code in [200, 201, 202]:
-                    print(f"[EMAIL SENT] Sent OTP {code} via Brevo HTTP API to {target}")
-                    return True
-                else:
-                    print(f"[EMAIL FAILED] Brevo API error: {resp.status_code} - {resp.text}")
-                    return False
+                try:
+                    resp = requests.post(
+                        "https://api.brevo.com/v3/smtp/email",
+                        headers={
+                            "api-key": brevo_api_key,
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "sender": {"name": "JanSeva", "email": from_email},
+                            "to": [{"email": target}],
+                            "subject": subject,
+                            "htmlContent": html_message
+                        },
+                        timeout=8
+                    )
+                    if resp.status_code in [200, 201, 202]:
+                        print(f"[EMAIL SENT] Sent OTP {code} via Brevo HTTP API to {target}")
+                        return True
+                    else:
+                        print(f"[EMAIL FAILED] Brevo API error: {resp.status_code} - {resp.text}. Falling back to SMTP...")
+                except Exception as api_err:
+                    print(f"[EMAIL FAILED] Brevo API exception: {api_err}. Falling back to SMTP...")
 
             elif resend_api_key:
                 import requests
