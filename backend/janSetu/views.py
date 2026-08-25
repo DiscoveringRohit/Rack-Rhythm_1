@@ -175,11 +175,9 @@ def request_otp(request):
             expires_at=expires_at
         )
         
-        success = send_otp_message(channel, target, otp_code)
-        if success:
-            return Response({"status": "sent", "message": f"OTP sent via {channel}"}, status=status.HTTP_200_OK)
-        else:
-            return Response({"error": "Failed to send OTP email. Please check that your email is correct and try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        import threading
+        threading.Thread(target=send_otp_message, args=(channel, target, otp_code), daemon=True).start()
+        return Response({"status": "sent", "message": f"OTP sent via {channel}"}, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
