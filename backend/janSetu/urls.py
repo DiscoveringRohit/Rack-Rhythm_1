@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (
     hello_api, request_otp, verify_otp, register_user, user_profile, user_login,
     get_states, get_cities, get_wards,
-    issue_list_create, issue_detail, upvote_issue, verify_issue, update_issue_status,
+    issue_list_create, issue_detail, upvote_issue, verify_issue, update_issue_status, assign_officer_squad,
     comment_list_create, notification_list, mark_notification_read, mark_all_notifications_read,
     CookieTokenObtainPairView, cookie_refresh, logout_view, google_login
 )
@@ -33,6 +33,7 @@ urlpatterns = [
     path("issues/<str:pk>/upvote/", upvote_issue, name="upvote_issue"),
     path("issues/<str:pk>/verify/", verify_issue, name="verify_issue"),
     path("issues/<str:pk>/status/", update_issue_status, name="update_issue_status"),
+    path("issues/<str:pk>/assign/", assign_officer_squad, name="assign_officer_squad"),
     path("issues/<str:pk>/comments/", comment_list_create, name="comment_list_create"),
     
     # Notifications routes
