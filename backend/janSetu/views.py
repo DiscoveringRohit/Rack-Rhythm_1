@@ -126,7 +126,12 @@ def send_otp_message(channel, target, code):
                 print("[OTP] Delivery accepted via SMTP")
                 return True
         except Exception as e:
-            print(f"[OTP] Delivery failed with exception: {type(e).__name__}")
+            print(f"[OTP] Delivery failed with exception: {type(e).__name__} ({e})")
+            if settings.DEBUG:
+                print(f"\n==========================================")
+                print(f"[OTP LOCAL DEV FALLBACK] Target: {target} | Code: {code}")
+                print(f"==========================================\n")
+                return True
             return False
     elif channel == 'sms':
         print(f"[OTP] SMS channel stub called")
@@ -156,12 +161,15 @@ def request_otp(request):
             otp_code=otp_code,
             expires_at=expires_at
         )
-        print("[OTP] OTP stored in database")
+        print(f"[OTP] OTP stored in database for {target}: {otp_code}")
         
         success = send_otp_message(channel, target, otp_code)
         if success:
             return Response({"status": "sent", "message": f"OTP delivery accepted via {channel}"}, status=status.HTTP_200_OK)
         else:
+            if settings.DEBUG:
+                print(f"[OTP LOCAL DEV] Returning success in DEBUG mode despite email provider error for {target}")
+                return Response({"status": "sent", "message": f"OTP generated (Local Dev Mode - Use code 123456 or check terminal)"}, status=status.HTTP_200_OK)
             return Response({"error": "Failed to deliver OTP email. Please check Brevo API configuration and try again."}, status=status.HTTP_400_BAD_REQUEST)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
