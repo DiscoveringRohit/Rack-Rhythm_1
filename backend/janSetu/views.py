@@ -670,6 +670,32 @@ def assign_officer_squad(request, pk):
     issue.save()
     return Response(CivicIssueSerializer(issue, context={'request': request}).data, status=status.HTTP_200_OK)
 
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def comment_list_create(request, pk):
+    try:
+        issue = CivicIssue.objects.get(pk=pk)
+    except CivicIssue.DoesNotExist:
+        return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+    if request.method == 'GET':
+        comments = issue.comments.all().order_by('created_at')
+        serializer = CommentSerializer(comments, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+    elif request.method == 'POST':
+        if not request.user.is_authenticated:
+            return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        serializer = CommentSerializer(data=request.data)
+        if serializer.is_valid():
+            comment = serializer.save(issue=issue, author=request.user)
+            issue.comments_count = issue.comments.count()
+            issue.save()
+            return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    return Response(CivicIssueSerializer(issue, context={'request': request}).data, status=status.HTTP_200_OK)
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def notification_list(request):

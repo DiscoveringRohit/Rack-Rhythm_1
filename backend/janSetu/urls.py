@@ -4,7 +4,7 @@ from .views import (
     get_states, get_cities, get_wards,
     issue_list_create, issue_detail, upvote_issue, verify_issue, update_issue_status, assign_officer_squad,
     comment_list_create, notification_list, mark_notification_read, mark_all_notifications_read,
-    CookieTokenObtainPairView, cookie_refresh, logout_view, google_login
+    cookie_refresh, logout_view, google_login
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 

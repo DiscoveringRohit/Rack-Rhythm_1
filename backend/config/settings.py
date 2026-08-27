@@ -271,7 +271,7 @@ AUTH_USER_MODEL = 'janSetu.CustomUser'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'janSetu.views.SafeJWTAuthentication',
+        'janSetu.authentication.SafeJWTAuthentication',
     ),
 }
 
