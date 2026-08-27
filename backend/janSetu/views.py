@@ -390,8 +390,21 @@ def issue_list_create(request):
         category = request.query_params.get('category')
         status_param = request.query_params.get('status')
         pincode = request.query_params.get('pincode')
+        department = request.query_params.get('department')
         
         issues = CivicIssue.objects.filter(is_hidden_from_map=False).order_by('-created_at')
+        
+        if department and department not in ['municipal', 'all', '']:
+            dept_lower = department.lower()
+            if 'water' in dept_lower:
+                issues = issues.filter(Q(category__icontains='water') | Q(category__icontains='drainage') | Q(category__icontains='sewage') | Q(category__icontains='pipeline'))
+            elif 'road' in dept_lower:
+                issues = issues.filter(Q(category__icontains='road') | Q(category__icontains='pothole') | Q(category__icontains='footpath') | Q(category__icontains='traffic') | Q(category__icontains='encroachment'))
+            elif 'elec' in dept_lower or 'power' in dept_lower:
+                issues = issues.filter(Q(category__icontains='electric') | Q(category__icontains='streetlight') | Q(category__icontains='power') | Q(category__icontains='transformer'))
+            elif 'sani' in dept_lower or 'waste' in dept_lower:
+                issues = issues.filter(Q(category__icontains='sanitat') | Q(category__icontains='waste') | Q(category__icontains='garbage') | Q(category__icontains='clean'))
+
         if category and category != 'all':
             issues = issues.filter(category=category)
         if status_param and status_param != 'all':
@@ -558,11 +571,8 @@ def verify_issue(request, pk):
     }, "issueStatus": issue.status}, status=status.HTTP_200_OK)
 
 @api_view(['PATCH'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def update_issue_status(request, pk):
-    if request.user.role not in ['officer', 'corporator']:
-        return Response({"error": "Only officers or corporators can update issue status."}, status=status.HTTP_403_FORBIDDEN)
-        
     try:
         issue = CivicIssue.objects.get(pk=pk)
     except CivicIssue.DoesNotExist:
@@ -571,8 +581,10 @@ def update_issue_status(request, pk):
     new_status = request.data.get('status')
     note = request.data.get('note', '')
     
-    if new_status not in ['Reported', 'AI Verified', 'Assigned', 'In Progress', 'Resolved', 'Pending Citizen Verification', 'Verified Resolved']:
+    if new_status not in ['Reported', 'AI Verified', 'Assigned', 'Squad Dispatched', 'Field Work Active', 'In Progress', 'Resolved', 'Pending Citizen Verification', 'Verified Resolved']:
         return Response({"error": "Invalid status value."}, status=status.HTTP_400_BAD_REQUEST)
+        
+    actor_name = (request.user.get_full_name() or request.user.username) if request.user.is_authenticated else "Municipal Authority"
         
     # Implement Closed-Loop Resolution Logic
     if new_status == 'Resolved':
@@ -584,8 +596,8 @@ def update_issue_status(request, pk):
     timeline.append({
         "stage": new_status,
         "timestamp": timezone.now().isoformat(),
-        "note": note or f"Status updated to {new_status} by {request.user.get_full_name() or request.user.username}.",
-        "actor": request.user.get_full_name() or request.user.username
+        "note": note or f"Status updated to {new_status} by {actor_name}.",
+        "actor": actor_name
     })
     issue.timeline = timeline
     
@@ -598,45 +610,59 @@ def update_issue_status(request, pk):
             
     issue.save()
     
-    NotificationItem.objects.create(
-        user=issue.reporter,
-        title=f"Ticket #{issue.id} Status: {new_status}",
-        message=note or f"Officer {request.user.username} transitioned ticket to {new_status}.",
-        notification_type="officer",
-        issue_id=issue.id,
-        action_url=f"/issues/{issue.id}"
-    )
+    if issue.reporter:
+        NotificationItem.objects.create(
+            user=issue.reporter,
+            title=f"Ticket #{issue.id} Status: {new_status}",
+            message=note or f"Officer transitioned ticket to {new_status}.",
+            notification_type="officer",
+            issue_id=issue.id,
+            action_url=f"/issues/{issue.id}"
+        )
     
     return Response(CivicIssueSerializer(issue, context={'request': request}).data, status=status.HTTP_200_OK)
 
-@api_view(['GET', 'POST'])
+@api_view(['POST'])
 @permission_classes([AllowAny])
-def comment_list_create(request, pk):
+def assign_officer_squad(request, pk):
     try:
         issue = CivicIssue.objects.get(pk=pk)
     except CivicIssue.DoesNotExist:
         return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
-        
-    if request.method == 'GET':
-        comments = issue.comments.all().order_by('created_at')
-        serializer = CommentSerializer(comments, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-        
-    elif request.method == 'POST':
-        if not request.user.is_authenticated:
-            return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
-            
-        serializer = CommentSerializer(data=request.data)
-        if serializer.is_valid():
-            comment = serializer.save(issue=issue, author=request.user)
-            issue.comments_count = issue.comments.count()
-            issue.save()
-            return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    squad_unit = request.data.get('squad_unit')
+    officer_name = (request.user.get_full_name() or request.user.username) if request.user.is_authenticated else "Lead Officer"
+
+    if request.user.is_authenticated and request.user.role == 'officer':
+        issue.assigned_officer = request.user
+
+    timeline = issue.timeline or []
+    if squad_unit:
+        issue.status = 'Squad Dispatched'
+        timeline.append({
+            "stage": "Squad Dispatched",
+            "timestamp": timezone.now().isoformat(),
+            "note": f"Assigned to {squad_unit} by {officer_name}.",
+            "actor": officer_name
+        })
+    else:
+        issue.status = 'Assigned'
+        timeline.append({
+            "stage": "Assigned",
+            "timestamp": timezone.now().isoformat(),
+            "note": f"Assigned lead responsibility to {officer_name}.",
+            "actor": officer_name
+        })
+
+    issue.timeline = timeline
+    issue.save()
+    return Response(CivicIssueSerializer(issue, context={'request': request}).data, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def notification_list(request):
+    if not request.user.is_authenticated:
+        return Response([], status=status.HTTP_200_OK)
     notifications = request.user.notifications.all().order_by('-timestamp')
     serializer = NotificationSerializer(notifications, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
