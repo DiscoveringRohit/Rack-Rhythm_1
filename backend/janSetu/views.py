@@ -23,6 +23,7 @@ from .serializers import (
 def _set_refresh_cookie(resp: Response, refresh_token: str):
     # Secure should be True in production (requires HTTPS). Use settings.DEBUG to toggle locally.
     secure_flag = not settings.DEBUG
+    samesite_flag = 'None' if secure_flag else 'Lax'
     # 14 days for example; align with your JWT settings
     max_age = 14 * 24 * 3600
     resp.set_cookie(
@@ -30,7 +31,7 @@ def _set_refresh_cookie(resp: Response, refresh_token: str):
         value=refresh_token,
         httponly=True,
         secure=secure_flag,
-        samesite='Lax',
+        samesite=samesite_flag,
         max_age=max_age,
         path='/'
     )
@@ -772,7 +773,7 @@ def google_login(request):
             max_age=60*60*24*7, # 7 days
             httponly=True,
             secure=not settings.DEBUG,
-            samesite='Lax',
+            samesite='None' if not settings.DEBUG else 'Lax',
             path='/'
         )
         return resp
