@@ -346,23 +346,35 @@ def user_profile(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken, AuthenticationFailed
+
+class SafeJWTAuthentication(JWTAuthentication):
+    """Custom JWT Authentication that returns None on expired/invalid tokens 
+    instead of throwing HTTP 401 exceptions for AllowAny endpoints.
+    """
+    def authenticate(self, request):
+        try:
+            return super().authenticate(request)
+        except (InvalidToken, AuthenticationFailed):
+            return None
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def cookie_refresh(request):
     """Refresh access token using the HttpOnly janseva_refresh cookie.
 
-    Returns: { "access": "<new_access>" }
+    Returns: { "access": "<new_access>", "authenticated": true/false }
     """
     refresh_token = request.COOKIES.get('janseva_refresh')
     if not refresh_token:
-        return Response({"detail": "No refresh token cookie present."}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({"access": None, "authenticated": False, "detail": "No refresh token cookie present."}, status=status.HTTP_200_OK)
     try:
         token = RefreshToken(refresh_token)
         new_access = str(token.access_token)
-        # Optionally: rotate refresh token here by issuing a new RefreshToken.for_user(user)
-        return Response({"access": new_access}, status=status.HTTP_200_OK)
+        return Response({"access": new_access, "authenticated": True}, status=status.HTTP_200_OK)
     except Exception as e:
-        return Response({"detail": "Invalid or expired refresh token."}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({"access": None, "authenticated": False, "detail": "Invalid or expired refresh token."}, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
