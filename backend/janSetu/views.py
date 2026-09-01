@@ -58,8 +58,41 @@ class CookieTokenObtainPairView(TokenObtainPairView):
         return original_response
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def hello_api(request):
     return Response({"message": "Hello from Django!", "status": "success"})
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def health_check(request):
+    """System diagnostic health check endpoint for monitoring and observability."""
+    start_time = timezone.now()
+    try:
+        issue_count = CivicIssue.objects.count()
+        user_count = CustomUser.objects.count()
+        notif_count = NotificationItem.objects.count()
+        db_status = "connected"
+    except Exception as db_err:
+        db_status = f"error: {str(db_err)}"
+        issue_count = user_count = notif_count = 0
+
+    return Response({
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "service": "JanSeva Backend API (janSetu)",
+        "timestamp": timezone.now().isoformat(),
+        "database": {
+            "status": db_status,
+            "total_issues": issue_count,
+            "total_users": user_count,
+            "total_notifications": notif_count,
+        },
+        "version": "2.0.0",
+        "protocols": {
+            "closed_loop_verification": True,
+            "pincode_hyperlocal": True,
+            "multi_engine_i18n": True,
+        }
+    }, status=status.HTTP_200_OK)
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)

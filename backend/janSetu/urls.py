@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import (
-    hello_api, request_otp, verify_otp, register_user, user_profile, user_login,
+    hello_api, health_check, request_otp, verify_otp, register_user, user_profile, user_login,
     get_states, get_cities, get_wards,
     issue_list_create, issue_detail, upvote_issue, verify_issue, update_issue_status, assign_officer_squad,
     comment_list_create, comment_detail, notification_list, mark_notification_read, mark_all_notifications_read,
@@ -10,6 +10,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
     path("hello/", hello_api, name="hello_api"),
+    path("health/", health_check, name="health_check"),
     path("leaderboard/", leaderboard_list, name="leaderboard_list"),
     path("auth/leaderboard/", leaderboard_list, name="auth_leaderboard_list"),
     
