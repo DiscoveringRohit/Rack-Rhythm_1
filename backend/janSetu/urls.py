@@ -4,7 +4,8 @@ from .views import (
     get_states, get_cities, get_wards,
     issue_list_create, issue_detail, upvote_issue, verify_issue, update_issue_status, assign_officer_squad,
     comment_list_create, comment_detail, notification_list, mark_notification_read, mark_all_notifications_read,
-    cookie_refresh, logout_view, google_login, merge_duplicate_issues, leaderboard_list
+    cookie_refresh, logout_view, google_login, merge_duplicate_issues, leaderboard_list,
+    announcement_list_create, announcement_detail
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -46,4 +47,8 @@ urlpatterns = [
     path("notifications/", notification_list, name="notification_list"),
     path("notifications/<int:pk>/read/", mark_notification_read, name="mark_notification_read"),
     path("notifications/read-all/", mark_all_notifications_read, name="mark_all_notifications_read"),
+
+    # Announcements routes (Hyperlocal PIN targeted broadcasts)
+    path("announcements/", announcement_list_create, name="announcements"),
+    path("announcements/<int:pk>/", announcement_detail, name="announcement_detail"),
 ]
