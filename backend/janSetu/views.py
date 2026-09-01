@@ -834,9 +834,11 @@ def verify_issue(request, pk):
 @api_view(['PATCH'])
 @permission_classes([AllowAny])
 def update_issue_status(request, pk):
-    try:
-        issue = CivicIssue.objects.get(pk=pk)
-    except CivicIssue.DoesNotExist:
+    issue = CivicIssue.objects.filter(pk=pk).first()
+    if not issue:
+        clean_pk = pk.replace("JS-", "")
+        issue = CivicIssue.objects.filter(models.Q(id=f"JS-{clean_pk}") | models.Q(id=clean_pk)).first()
+    if not issue:
         return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
         
     new_status = request.data.get('status')
