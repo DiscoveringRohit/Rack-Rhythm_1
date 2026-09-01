@@ -29,12 +29,14 @@ class CustomUserSerializer(serializers.ModelSerializer):
     badges = serializers.JSONField(read_only=True)
     profile = ProfileSerializer(read_only=True)
     ward_details = WardSerializer(source='ward', read_only=True)
+    civicCitizenXP = serializers.IntegerField(source='civic_citizen_xp', read_only=True)
+    levelTitle = serializers.CharField(source='level_title', read_only=True)
 
     class Meta:
         model = CustomUser
         fields = [
             'id', 'username', 'email', 'phone_number', 'role', 'avatar', 
-            'ward', 'ward_details', 'civic_citizen_xp', 'level', 'level_title', 
+            'ward', 'ward_details', 'civic_citizen_xp', 'civicCitizenXP', 'level', 'level_title', 'levelTitle',
             'verified_citizen', 'aadhaar_linked', 'stats', 'badges', 'profile',
             'gender', 'pin_code', 'state', 'city'
         ]
@@ -61,8 +63,10 @@ class RegisterSerializer(serializers.Serializer):
     pincode = serializers.CharField(max_length=10, required=False, allow_blank=True)
 
 class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField(required=False)
-    phone = serializers.CharField(required=False)
+    username = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.CharField(required=False, allow_blank=True)
+    identifier = serializers.CharField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True)
 
 class ReporterSerializer(serializers.ModelSerializer):
@@ -94,13 +98,28 @@ class OfficerSerializer(serializers.ModelSerializer):
         return obj.username
 
 class CommentSerializer(serializers.ModelSerializer):
-    author_name = serializers.CharField(source='author.username', read_only=True)
+    author_name = serializers.SerializerMethodField()
+    author_username = serializers.CharField(source='author.username', read_only=True)
     author_avatar = serializers.URLField(source='author.avatar', read_only=True)
+    author_role = serializers.CharField(source='author.role', read_only=True)
+    is_officer = serializers.SerializerMethodField()
+    timestamp = serializers.DateTimeField(source='created_at', read_only=True)
 
     class Meta:
         model = Comment
-        fields = ['id', 'issue', 'author', 'author_name', 'author_avatar', 'text', 'created_at']
-        read_only_fields = ['author', 'issue']
+        fields = ['id', 'issue', 'author', 'author_name', 'author_username', 'author_avatar', 'author_role', 'is_officer', 'text', 'created_at', 'timestamp']
+        read_only_fields = ['author', 'issue', 'created_at', 'timestamp']
+
+    def get_author_name(self, obj):
+        if obj.author:
+            if hasattr(obj.author, 'profile') and obj.author.profile.full_name:
+                return obj.author.profile.full_name
+            full_name = obj.author.get_full_name()
+            return full_name if full_name.strip() else obj.author.username
+        return "Citizen"
+
+    def get_is_officer(self, obj):
+        return bool(obj.author and obj.author.role in ['officer', 'corporator'])
 
 class CivicIssueSerializer(serializers.ModelSerializer):
     reporter = ReporterSerializer(read_only=True)
@@ -112,14 +131,18 @@ class CivicIssueSerializer(serializers.ModelSerializer):
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
     aiAnalysis = serializers.JSONField(source='ai_analysis', required=False, allow_null=True)
     assignedDepartment = serializers.CharField(source='assigned_department', required=False, allow_blank=True, allow_null=True)
+    timesReported = serializers.IntegerField(source='times_reported', required=False, default=1)
+    mergedTicketIds = serializers.JSONField(source='merged_ticket_ids', required=False, default=list)
+    pincode = serializers.CharField(source='pin_code', read_only=True)
 
     class Meta:
         model = CivicIssue
         fields = [
             'id', 'title', 'description', 'category', 'status', 'urgency',
-            'location', 'pin_code', 'reporter', 'images', 'aiAnalysis', 'assignedDepartment',
+            'location', 'pin_code', 'pincode', 'reporter', 'images', 'aiAnalysis', 'assignedDepartment',
             'assignedOfficer', 'timeline', 'upvotes', 'isUpvoted', 'commentsCount',
-            'verificationVotes', 'is_hidden_from_map', 'createdAt', 'updatedAt'
+            'verificationVotes', 'is_hidden_from_map', 'times_reported', 'timesReported',
+            'merged_ticket_ids', 'mergedTicketIds', 'createdAt', 'updatedAt'
         ]
 
     def get_isUpvoted(self, obj):

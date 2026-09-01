@@ -99,6 +99,8 @@ class CivicIssue(models.Model):
     
     verification_votes = models.JSONField(default=dict, blank=True) # {"yes": int, "no": int, "users": list}
     is_hidden_from_map = models.BooleanField(default=False)
+    times_reported = models.IntegerField(default=1) # Number of times this civic issue has been reported
+    merged_ticket_ids = models.JSONField(default=list, blank=True) # List of duplicate ticket IDs merged into this ticket
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
