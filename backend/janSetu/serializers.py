@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, OTPRecord
+from .models import CustomUser, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, OTPRecord, Announcement
 
 class StateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -175,3 +175,19 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = NotificationItem
         fields = ['id', 'title', 'message', 'notification_type', 'timestamp', 'read', 'issueId', 'actionUrl']
+
+class AnnouncementSerializer(serializers.ModelSerializer):
+    authorName = serializers.CharField(source='author_name', required=False, allow_null=True)
+    authorRole = serializers.CharField(source='author_role', required=False, default='officer')
+    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
+    expiresAt = serializers.DateTimeField(source='expires_at', required=False, allow_null=True)
+    actionUrl = serializers.CharField(source='action_url', required=False, allow_null=True)
+    isActive = serializers.BooleanField(source='is_active', default=True)
+
+    class Meta:
+        model = Announcement
+        fields = [
+            'id', 'title', 'message', 'department', 'pincodes', 'urgency',
+            'category', 'authorName', 'authorRole', 'createdAt', 'expiresAt',
+            'actionUrl', 'isActive'
+        ]

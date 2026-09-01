@@ -164,3 +164,21 @@ class Profile(models.Model):
 
     def __str__(self):
         return self.public_username
+
+class Announcement(models.Model):
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    department = models.CharField(max_length=100, default="Municipal Corporation")
+    pincodes = models.JSONField(default=list, blank=True)  # e.g. ["751024", "751030"]
+    urgency = models.CharField(max_length=20, default="Advisory")  # Emergency, High, Advisory, Normal
+    category = models.CharField(max_length=100, default="General Advisory")
+    author_name = models.CharField(max_length=150, blank=True, null=True)
+    author_role = models.CharField(max_length=50, default="officer")
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(blank=True, null=True)
+    action_url = models.CharField(max_length=255, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        target = ", ".join(self.pincodes) if self.pincodes else "ALL"
+        return f"[{self.department}] {self.title} (PIN: {target})"

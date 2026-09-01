@@ -14,11 +14,12 @@ from django.db.models import Q
 import math
 import difflib
 
-from .models import CustomUser, OTPRecord, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile
+from .models import CustomUser, OTPRecord, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, Announcement
 from .serializers import (
     OTPRequestSerializer, OTPVerifySerializer, CustomUserSerializer,
     CivicIssueSerializer, CommentSerializer, NotificationSerializer,
-    StateSerializer, CitySerializer, WardSerializer, RegisterSerializer, LoginSerializer
+    StateSerializer, CitySerializer, WardSerializer, RegisterSerializer, LoginSerializer,
+    AnnouncementSerializer
 )
 
 # Helper to set refresh cookie on responses
@@ -1247,4 +1248,112 @@ def leaderboard_list(request):
             "level": u.level or (1 if (u.civic_citizen_xp or 0) < 200 else (2 if (u.civic_citizen_xp or 0) < 500 else 3)),
         })
     return Response(leaderboard, status=status.HTTP_200_OK)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def announcement_list_create(request):
+    if request.method == 'GET':
+        pincode = request.query_params.get('pincode', '').strip()
+        department = request.query_params.get('department', '').strip()
+        
+        announcements = Announcement.objects.filter(is_active=True).order_by('-created_at')
+        
+        if department and department.lower() not in ['all', 'municipal']:
+            announcements = announcements.filter(department__icontains=department)
+            
+        results = []
+        for ann in announcements:
+            if pincode:
+                # If announcement has specific pincodes, check if pincode matches or if announcement is ALL
+                if ann.pincodes and len(ann.pincodes) > 0:
+                    if pincode in ann.pincodes or "ALL" in [p.upper() for p in ann.pincodes]:
+                        results.append(ann)
+                else:
+                    # No pincode restrictions -> visible to all
+                    results.append(ann)
+            else:
+                results.append(ann)
+                
+        serializer = AnnouncementSerializer(results, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    elif request.method == 'POST':
+        title = request.data.get('title', '').strip()
+        message = request.data.get('message', '').strip()
+        department = request.data.get('department', 'Municipal Corporation').strip()
+        pincodes = request.data.get('pincodes', [])
+        urgency = request.data.get('urgency', 'Advisory').strip()
+        category = request.data.get('category', 'General Advisory').strip()
+        author_name = request.data.get('author_name') or (request.user.get_full_name() if request.user.is_authenticated else "Municipal Authority")
+        author_role = request.data.get('author_role', 'officer')
+        action_url = request.data.get('action_url', '/feed')
+
+        if not title or not message:
+            return Response({"error": "Title and message are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if isinstance(pincodes, str):
+            pincodes = [p.strip() for p in pincodes.split(',') if p.strip()]
+
+        announcement = Announcement.objects.create(
+            title=title,
+            message=message,
+            department=department,
+            pincodes=pincodes,
+            urgency=urgency,
+            category=category,
+            author_name=author_name,
+            author_role=author_role,
+            action_url=action_url,
+            is_active=True
+        )
+
+        # Fan-out notifications to target citizens residing in these PIN codes
+        target_users = CustomUser.objects.all()
+        if pincodes and len(pincodes) > 0 and "ALL" not in [p.upper() for p in pincodes]:
+            target_users = target_users.filter(
+                Q(profile__pincode__in=pincodes) | Q(pin_code__in=pincodes)
+            )
+
+        notif_title = f"📢 [{department.upper()} NOTICE - PIN {','.join(pincodes) if pincodes else 'ALL'}]: {title}"
+        notifications_to_create = []
+        for u in target_users[:500]:  # Cap broadcast fanout
+            notifications_to_create.append(NotificationItem(
+                user=u,
+                title=notif_title,
+                message=message,
+                notification_type='officer',
+                action_url=f"/feed?pin={pincodes[0] if pincodes else ''}"
+            ))
+
+        if notifications_to_create:
+            NotificationItem.objects.bulk_create(notifications_to_create)
+
+        serializer = AnnouncementSerializer(announcement)
+        return Response({
+            "message": f"Broadcast published successfully. Dispatched to {len(notifications_to_create)} citizens in PIN {', '.join(pincodes) if pincodes else 'ALL'}.",
+            "announcement": serializer.data,
+            "reach_count": len(notifications_to_create)
+        }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['DELETE', 'PATCH'])
+@permission_classes([AllowAny])
+def announcement_detail(request, pk):
+    try:
+        announcement = Announcement.objects.get(pk=pk)
+    except Announcement.DoesNotExist:
+        return Response({"error": "Announcement not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        announcement.is_active = False
+        announcement.save()
+        return Response({"status": "success", "message": "Announcement deactivated."}, status=status.HTTP_200_OK)
+
+    elif request.method == 'PATCH':
+        serializer = AnnouncementSerializer(announcement, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
