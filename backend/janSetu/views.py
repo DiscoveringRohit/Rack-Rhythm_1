@@ -15,12 +15,12 @@ from django.db.models import Q
 import math
 import difflib
 
-from .models import CustomUser, OTPRecord, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, Announcement, BudgetAllocation
+from .models import CustomUser, OTPRecord, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, Announcement, BudgetAllocation, ConsensusPoll, WardBudgetProposal
 from .serializers import (
     OTPRequestSerializer, OTPVerifySerializer, CustomUserSerializer,
     CivicIssueSerializer, CommentSerializer, NotificationSerializer,
     StateSerializer, CitySerializer, WardSerializer, RegisterSerializer, LoginSerializer,
-    AnnouncementSerializer, BudgetAllocationSerializer
+    AnnouncementSerializer, BudgetAllocationSerializer, ConsensusPollSerializer, WardBudgetProposalSerializer
 )
 
 # Helper to set refresh cookie on responses
@@ -1385,82 +1385,341 @@ def announcement_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+# ==========================================
+# CONSENSUS POLLS (CITIZEN REFERENDUMS) VIEWS
+# ==========================================
+
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
-def budget_list_create(request):
+def poll_list_create(request):
     if request.method == 'GET':
-        # Auto-seed sample participatory budget allocations if table is empty
-        if BudgetAllocation.objects.count() == 0:
-            BudgetAllocation.objects.create(
-                title="Smart Solar Streetlights Installation - Ward 42",
-                description="Install 45 energy-efficient LED solar streetlights along main arterial roads and residential lanes to improve night visibility and citizen safety.",
-                category="Energy & Safety",
-                ward_name="Ward 42",
-                pincode="751030",
-                allocated_amount=450000.00,
-                spent_amount=120000.00,
-                status="Funded",
-                community_votes=342
-            )
-            BudgetAllocation.objects.create(
-                title="Stormwater Drain Upgrade & Desilting Project",
-                description="Reconstruct concrete stormwater channels to eliminate monsoon waterlogging and prevent flash urban flooding near Jaydev Vihar.",
-                category="Sanitation & Drainage",
-                ward_name="Ward 42",
-                pincode="751030",
-                allocated_amount=850000.00,
-                spent_amount=0.00,
-                status="Approved",
-                community_votes=518
-            )
-            BudgetAllocation.objects.create(
-                title="Community Park & Green Children Play Zone",
-                description="Develop a 2-acre public park featuring jogging tracks, outdoor gym equipment, and native tree saplings for community wellness.",
-                category="Parks & Recreation",
-                ward_name="Ward 42",
-                pincode="751024",
-                allocated_amount=600000.00,
-                spent_amount=0.00,
-                status="Under Voting",
-                community_votes=289
-            )
-
-        pincode = request.query_params.get('pincode')
+        ward = request.query_params.get('ward')
+        department = request.query_params.get('department')
         status_param = request.query_params.get('status')
-        budgets = BudgetAllocation.objects.all().order_by('-community_votes', '-created_at')
+        
+        polls = ConsensusPoll.objects.all().order_by('-created_at')
+        if ward and ward.lower() != 'all':
+            polls = polls.filter(Q(ward__icontains=ward) | Q(ward='all'))
+        if department and department.lower() != 'all':
+            polls = polls.filter(department__icontains=department)
+        if status_param and status_param.lower() != 'all':
+            polls = polls.filter(status__iexact=status_param)
 
-        if pincode:
-            budgets = budgets.filter(pincode=pincode)
-        if status_param:
-            budgets = budgets.filter(status=status_param)
-
-        serializer = BudgetAllocationSerializer(budgets, many=True)
+        serializer = ConsensusPollSerializer(polls, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     elif request.method == 'POST':
-        serializer = BudgetAllocationSerializer(data=request.data)
+        data = request.data.copy()
+        poll_id = data.get('id') or f"poll-{int(timezone.now().timestamp() * 1000)}"
+        data['id'] = poll_id
+
+        creator_name = "Official"
+        if request.user.is_authenticated:
+            creator_name = request.user.get_full_name() or request.user.username
+        elif data.get('createdByName'):
+            creator_name = data.get('createdByName')
+        elif data.get('createdBy'):
+            creator_name = data.get('createdBy')
+
+        data['created_by_name'] = creator_name
+
+        serializer = ConsensusPollSerializer(data=data)
         if serializer.is_valid():
             user = request.user if request.user.is_authenticated else None
-            serializer.save(proposed_by=user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            poll_obj = serializer.save(created_by=user, created_by_name=creator_name)
+
+            # Auto-mirror to WardBudgetProposal if not exists
+            if not WardBudgetProposal.objects.filter(id=poll_id).exists():
+                # Parse numeric budget
+                budget_str = data.get('budgetEstimate') or data.get('budget_estimate') or "4500000"
+                num_budget = 4500000.0
+                try:
+                    import re
+                    clean_str = str(budget_str).replace(',', '').strip()
+                    lakh_m = re.search(r'([\d.]+)\s*(?:lakh|lac|l)', clean_str, re.I)
+                    cr_m = re.search(r'([\d.]+)\s*(?:crore|cr)', clean_str, re.I)
+                    if lakh_m:
+                        num_budget = float(lakh_m.group(1)) * 100000
+                    elif cr_m:
+                        num_budget = float(cr_m.group(1)) * 10000000
+                    else:
+                        digits = re.sub(r'[^\d.]', '', clean_str)
+                        if digits:
+                            num_budget = float(digits)
+                except Exception:
+                    num_budget = 4500000.0
+
+                WardBudgetProposal.objects.create(
+                    id=poll_id,
+                    title=poll_obj.title,
+                    category=poll_obj.department,
+                    description=poll_obj.description,
+                    required_budget=num_budget,
+                    ward_pin=poll_obj.ward,
+                    created_by=user,
+                    created_by_name=creator_name,
+                    linked_poll_id=poll_id,
+                    status="Open for Voting"
+                )
+
+            return Response(ConsensusPollSerializer(poll_obj).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([AllowAny])
+def poll_detail(request, pk):
+    try:
+        poll = ConsensusPoll.objects.get(pk=pk)
+    except ConsensusPoll.DoesNotExist:
+        return Response({"error": "Consensus Poll not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        return Response(ConsensusPollSerializer(poll).data, status=status.HTTP_200_OK)
+
+    elif request.method == 'PATCH':
+        serializer = ConsensusPollSerializer(poll, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == 'DELETE':
+        # Clean up both poll and any linked budget proposal
+        WardBudgetProposal.objects.filter(id=poll.id).delete()
+        poll.delete()
+        return Response({"status": "success", "message": "Poll deleted."}, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def vote_poll(request, pk):
+    try:
+        poll = ConsensusPoll.objects.get(pk=pk)
+    except ConsensusPoll.DoesNotExist:
+        return Response({"error": "Consensus Poll not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    vote_type = request.data.get('vote') or request.data.get('voteType') or 'yes'
+    user_id = str(request.user.id) if request.user.is_authenticated else (request.data.get('userId') or 'anonymous_user')
+
+    voted_users = poll.voted_users or {}
+    if user_id in voted_users and user_id != 'anonymous_user':
+        return Response({"message": "You have already voted on this ballot.", "poll": ConsensusPollSerializer(poll).data}, status=status.HTTP_200_OK)
+
+    voted_users[user_id] = vote_type
+    poll.voted_users = voted_users
+
+    if vote_type == 'yes':
+        poll.yes_votes += 1
+    else:
+        poll.no_votes += 1
+
+    # Check threshold consensus
+    total_votes = poll.yes_votes + poll.no_votes
+    if total_votes >= 2000 and (poll.yes_votes / total_votes) >= 0.6:
+        poll.status = "Approved"
+
+    poll.save()
+
+    # Mirror vote to linked WardBudgetProposal if exists
+    linked_prop = WardBudgetProposal.objects.filter(Q(id=poll.id) | Q(linked_poll_id=poll.id)).first()
+    if linked_prop and vote_type == 'yes':
+        linked_prop.current_votes = poll.yes_votes
+        if poll.status == "Approved":
+            linked_prop.status = "Threshold Met"
+        linked_prop.save()
+
+    return Response({
+        "message": "Vote recorded successfully.",
+        "poll": ConsensusPollSerializer(poll).data
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['PATCH'])
+@permission_classes([AllowAny])
+def update_poll_status(request, pk):
+    try:
+        poll = ConsensusPoll.objects.get(pk=pk)
+    except ConsensusPoll.DoesNotExist:
+        return Response({"error": "Consensus Poll not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    new_status = request.data.get('status')
+    if new_status not in ['Active Ballot', 'Approved', 'Rejected']:
+        return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+
+    poll.status = new_status
+    poll.save()
+
+    # Sync to linked budget proposal
+    linked_prop = WardBudgetProposal.objects.filter(Q(id=poll.id) | Q(linked_poll_id=poll.id)).first()
+    if linked_prop:
+        if new_status == 'Approved':
+            linked_prop.status = 'Threshold Met'
+        elif new_status == 'Active Ballot':
+            linked_prop.status = 'Open for Voting'
+        linked_prop.save()
+
+    return Response(ConsensusPollSerializer(poll).data, status=status.HTTP_200_OK)
+
+
+# ==========================================
+# WARD BUDGET PROPOSALS VIEWS
+# ==========================================
+
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def budget_proposal_list_create(request):
+    if request.method == 'GET':
+        ward_pin = request.query_params.get('wardPin') or request.query_params.get('ward_pin') or request.query_params.get('pincode')
+        category = request.query_params.get('category')
+        status_param = request.query_params.get('status')
+
+        proposals = WardBudgetProposal.objects.all().order_by('-current_votes', '-created_at')
+
+        if ward_pin and ward_pin.lower() != 'all':
+            proposals = proposals.filter(Q(ward_pin__icontains=ward_pin) | Q(ward_pin='all'))
+        if category and category.lower() != 'all':
+            proposals = proposals.filter(category__icontains=category)
+        if status_param and status_param.lower() != 'all':
+            proposals = proposals.filter(status__iexact=status_param)
+
+        serializer = WardBudgetProposalSerializer(proposals, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    elif request.method == 'POST':
+        data = request.data.copy()
+        prop_id = data.get('id') or f"initiative-{int(timezone.now().timestamp() * 1000)}"
+        data['id'] = prop_id
+
+        creator_name = "Citizen Initiator"
+        if request.user.is_authenticated:
+            creator_name = request.user.get_full_name() or request.user.username
+        elif data.get('createdByName'):
+            creator_name = data.get('createdByName')
+        elif data.get('createdBy'):
+            creator_name = data.get('createdBy')
+
+        data['created_by_name'] = creator_name
+
+        serializer = WardBudgetProposalSerializer(data=data)
+        if serializer.is_valid():
+            user = request.user if request.user.is_authenticated else None
+            prop_obj = serializer.save(created_by=user, created_by_name=creator_name)
+
+            # Auto-mirror to ConsensusPoll if not exists
+            if not ConsensusPoll.objects.filter(id=prop_id).exists():
+                budget_num = float(prop_obj.required_budget)
+                budget_lakhs = f"₹ {(budget_num / 100000):.1f} Lakhs" if budget_num < 10000000 else f"₹ {(budget_num / 10000000):.2f} Cr"
+
+                ConsensusPoll.objects.create(
+                    id=prop_id,
+                    title=prop_obj.title,
+                    department=prop_obj.category,
+                    ward=prop_obj.ward_pin,
+                    description=prop_obj.description,
+                    yes_votes=prop_obj.current_votes,
+                    no_votes=0,
+                    status="Active Ballot",
+                    days_left=14,
+                    budget_estimate=budget_lakhs,
+                    created_by=user,
+                    created_by_name=creator_name
+                )
+
+            return Response(WardBudgetProposalSerializer(prop_obj).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Backwards compatibility alias for old route
+budget_list_create = budget_proposal_list_create
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([AllowAny])
+def budget_proposal_detail(request, pk):
+    try:
+        prop = WardBudgetProposal.objects.get(pk=pk)
+    except WardBudgetProposal.DoesNotExist:
+        return Response({"error": "Ward Budget Proposal not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        return Response(WardBudgetProposalSerializer(prop).data, status=status.HTTP_200_OK)
+
+    elif request.method == 'PATCH':
+        serializer = WardBudgetProposalSerializer(prop, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == 'DELETE':
+        ConsensusPoll.objects.filter(id=prop.id).delete()
+        prop.delete()
+        return Response({"status": "success", "message": "Proposal deleted."}, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def vote_budget_proposal(request, pk):
     try:
-        budget = BudgetAllocation.objects.get(pk=pk)
-    except BudgetAllocation.DoesNotExist:
-        return Response({"error": "Budget allocation proposal not found."}, status=status.HTTP_404_NOT_FOUND)
+        prop = WardBudgetProposal.objects.get(pk=pk)
+    except WardBudgetProposal.DoesNotExist:
+        return Response({"error": "Ward Budget Proposal not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    budget.community_votes += 1
-    budget.save()
+    user_id = str(request.user.id) if request.user.is_authenticated else (request.data.get('userId') or 'anonymous_user')
+    voted_users = prop.voted_users or []
+
+    if user_id in voted_users and user_id != 'anonymous_user':
+        return Response({"message": "You have already voted for this proposal.", "proposal": WardBudgetProposalSerializer(prop).data}, status=status.HTTP_200_OK)
+
+    voted_users.append(user_id)
+    prop.voted_users = voted_users
+    prop.current_votes += 1
+
+    if prop.current_votes >= 2000 and prop.status == "Open for Voting":
+        prop.status = "Threshold Met"
+
+    prop.save()
+
+    # Mirror vote to linked ConsensusPoll
+    linked_poll = ConsensusPoll.objects.filter(Q(id=prop.id) | Q(id=prop.linked_poll_id)).first()
+    if linked_poll:
+        linked_poll.yes_votes = prop.current_votes
+        if prop.status == "Threshold Met":
+            linked_poll.status = "Approved"
+        linked_poll.save()
 
     return Response({
-        "message": "Community vote recorded successfully.",
-        "votes": budget.community_votes,
-        "id": budget.id
+        "message": "Vote recorded successfully.",
+        "proposal": WardBudgetProposalSerializer(prop).data
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['PATCH'])
+@permission_classes([AllowAny])
+def update_budget_proposal_status(request, pk):
+    try:
+        prop = WardBudgetProposal.objects.get(pk=pk)
+    except WardBudgetProposal.DoesNotExist:
+        return Response({"error": "Ward Budget Proposal not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    new_status = request.data.get('status')
+    if new_status not in ['Open for Voting', 'Threshold Met', 'In Execution']:
+        return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+
+    prop.status = new_status
+    prop.save()
+
+    # Mirror to linked ConsensusPoll
+    linked_poll = ConsensusPoll.objects.filter(Q(id=prop.id) | Q(id=prop.linked_poll_id)).first()
+    if linked_poll:
+        if new_status in ['Threshold Met', 'In Execution']:
+            linked_poll.status = "Approved"
+        elif new_status == 'Open for Voting':
+            linked_poll.status = "Active Ballot"
+        linked_poll.save()
+
+    return Response(WardBudgetProposalSerializer(prop).data, status=status.HTTP_200_OK)
+
 
 

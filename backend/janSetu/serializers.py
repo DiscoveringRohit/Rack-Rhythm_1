@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, OTPRecord, Announcement, BudgetAllocation
+from .models import CustomUser, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, OTPRecord, Announcement, BudgetAllocation, ConsensusPoll, WardBudgetProposal
 
 class StateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -202,4 +202,48 @@ class BudgetAllocationSerializer(serializers.ModelSerializer):
             'status', 'community_votes', 'communityVotes', 'created_at', 'createdAt',
             'updated_at', 'updatedAt'
         ]
+
+class ConsensusPollSerializer(serializers.ModelSerializer):
+    yesVotes = serializers.IntegerField(source='yes_votes', required=False, default=0)
+    noVotes = serializers.IntegerField(source='no_votes', required=False, default=0)
+    daysLeft = serializers.IntegerField(source='days_left', required=False, default=14)
+    budgetEstimate = serializers.CharField(source='budget_estimate', required=False, default='₹ 45.0 Lakhs')
+    createdByName = serializers.CharField(source='created_by_name', required=False, allow_null=True)
+    votedUsers = serializers.JSONField(source='voted_users', read_only=True)
+    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
+    updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
+
+    class Meta:
+        model = ConsensusPoll
+        fields = [
+            'id', 'title', 'department', 'ward', 'description',
+            'yes_votes', 'yesVotes', 'no_votes', 'noVotes',
+            'status', 'days_left', 'daysLeft',
+            'budget_estimate', 'budgetEstimate',
+            'createdByName', 'votedUsers', 'createdAt', 'updatedAt'
+        ]
+
+
+class WardBudgetProposalSerializer(serializers.ModelSerializer):
+    requiredBudget = serializers.DecimalField(source='required_budget', max_digits=14, decimal_places=2)
+    currentVotes = serializers.IntegerField(source='current_votes', required=False, default=0)
+    wardPin = serializers.CharField(source='ward_pin', required=False, default='751024')
+    createdBy = serializers.CharField(source='created_by_name', required=False, allow_null=True)
+    createdByName = serializers.CharField(source='created_by_name', required=False, allow_null=True)
+    votedUsers = serializers.JSONField(source='voted_users', read_only=True)
+    linkedPollId = serializers.CharField(source='linked_poll_id', required=False, allow_null=True)
+    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
+    updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
+
+    class Meta:
+        model = WardBudgetProposal
+        fields = [
+            'id', 'title', 'category', 'description',
+            'required_budget', 'requiredBudget',
+            'current_votes', 'currentVotes',
+            'status', 'ward_pin', 'wardPin',
+            'createdBy', 'createdByName', 'votedUsers',
+            'linkedPollId', 'createdAt', 'updatedAt'
+        ]
+
 
