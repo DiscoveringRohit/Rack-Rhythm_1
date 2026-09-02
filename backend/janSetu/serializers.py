@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, OTPRecord, Announcement
+from .models import CustomUser, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, OTPRecord, Announcement, BudgetAllocation
 
 class StateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -191,3 +191,20 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             'category', 'authorName', 'authorRole', 'createdAt', 'expiresAt',
             'actionUrl', 'isActive'
         ]
+
+class BudgetAllocationSerializer(serializers.ModelSerializer):
+    allocatedAmount = serializers.DecimalField(source='allocated_amount', max_digits=12, decimal_places=2)
+    spentAmount = serializers.DecimalField(source='spent_amount', max_digits=12, decimal_places=2)
+    communityVotes = serializers.IntegerField(source='community_votes', read_only=True)
+    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
+    updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
+
+    class Meta:
+        model = BudgetAllocation
+        fields = [
+            'id', 'title', 'description', 'category', 'ward_name', 'pincode',
+            'allocated_amount', 'allocatedAmount', 'spent_amount', 'spentAmount',
+            'status', 'community_votes', 'communityVotes', 'created_at', 'createdAt',
+            'updated_at', 'updatedAt'
+        ]
+

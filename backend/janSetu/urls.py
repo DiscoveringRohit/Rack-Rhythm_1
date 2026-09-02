@@ -5,7 +5,7 @@ from .views import (
     issue_list_create, issue_detail, upvote_issue, verify_issue, update_issue_status, assign_officer_squad,
     comment_list_create, comment_detail, notification_list, mark_notification_read, mark_all_notifications_read,
     cookie_refresh, logout_view, google_login, merge_duplicate_issues, leaderboard_list,
-    announcement_list_create, announcement_detail
+    announcement_list_create, announcement_detail, budget_list_create, vote_budget_proposal
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -51,4 +51,8 @@ urlpatterns = [
     # Announcements routes (Hyperlocal PIN targeted broadcasts)
     path("announcements/", announcement_list_create, name="announcements"),
     path("announcements/<int:pk>/", announcement_detail, name="announcement_detail"),
+
+    # Participatory Budgeting & Ward Budget Allocation routes
+    path("budgets/", budget_list_create, name="budgets"),
+    path("budgets/<int:pk>/vote/", vote_budget_proposal, name="vote_budget_proposal"),
 ]

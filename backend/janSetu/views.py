@@ -14,12 +14,12 @@ from django.db.models import Q
 import math
 import difflib
 
-from .models import CustomUser, OTPRecord, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, Announcement
+from .models import CustomUser, OTPRecord, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, Announcement, BudgetAllocation
 from .serializers import (
     OTPRequestSerializer, OTPVerifySerializer, CustomUserSerializer,
     CivicIssueSerializer, CommentSerializer, NotificationSerializer,
     StateSerializer, CitySerializer, WardSerializer, RegisterSerializer, LoginSerializer,
-    AnnouncementSerializer
+    AnnouncementSerializer, BudgetAllocationSerializer
 )
 
 # Helper to set refresh cookie on responses
@@ -1382,4 +1382,84 @@ def announcement_detail(request, pk):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def budget_list_create(request):
+    if request.method == 'GET':
+        # Auto-seed sample participatory budget allocations if table is empty
+        if BudgetAllocation.objects.count() == 0:
+            BudgetAllocation.objects.create(
+                title="Smart Solar Streetlights Installation - Ward 42",
+                description="Install 45 energy-efficient LED solar streetlights along main arterial roads and residential lanes to improve night visibility and citizen safety.",
+                category="Energy & Safety",
+                ward_name="Ward 42",
+                pincode="751030",
+                allocated_amount=450000.00,
+                spent_amount=120000.00,
+                status="Funded",
+                community_votes=342
+            )
+            BudgetAllocation.objects.create(
+                title="Stormwater Drain Upgrade & Desilting Project",
+                description="Reconstruct concrete stormwater channels to eliminate monsoon waterlogging and prevent flash urban flooding near Jaydev Vihar.",
+                category="Sanitation & Drainage",
+                ward_name="Ward 42",
+                pincode="751030",
+                allocated_amount=850000.00,
+                spent_amount=0.00,
+                status="Approved",
+                community_votes=518
+            )
+            BudgetAllocation.objects.create(
+                title="Community Park & Green Children Play Zone",
+                description="Develop a 2-acre public park featuring jogging tracks, outdoor gym equipment, and native tree saplings for community wellness.",
+                category="Parks & Recreation",
+                ward_name="Ward 42",
+                pincode="751024",
+                allocated_amount=600000.00,
+                spent_amount=0.00,
+                status="Under Voting",
+                community_votes=289
+            )
+
+        pincode = request.query_params.get('pincode')
+        status_param = request.query_params.get('status')
+        budgets = BudgetAllocation.objects.all().order_by('-community_votes', '-created_at')
+
+        if pincode:
+            budgets = budgets.filter(pincode=pincode)
+        if status_param:
+            budgets = budgets.filter(status=status_param)
+
+        serializer = BudgetAllocationSerializer(budgets, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    elif request.method == 'POST':
+        serializer = BudgetAllocationSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user if request.user.is_authenticated else None
+            serializer.save(proposed_by=user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def vote_budget_proposal(request, pk):
+    try:
+        budget = BudgetAllocation.objects.get(pk=pk)
+    except BudgetAllocation.DoesNotExist:
+        return Response({"error": "Budget allocation proposal not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    budget.community_votes += 1
+    budget.save()
+
+    return Response({
+        "message": "Community vote recorded successfully.",
+        "votes": budget.community_votes,
+        "id": budget.id
+    }, status=status.HTTP_200_OK)
+
 
