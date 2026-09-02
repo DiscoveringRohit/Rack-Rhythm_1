@@ -103,7 +103,7 @@ def send_otp_message(channel, target, code):
     """Function to send OTP via Brevo HTTP API with fallback to Django SMTP."""
     if channel == 'email' or '@' in str(target):
         try:
-            print(f"[OTP] Request received for target email")
+            print(f"[OTP] Request received for target email: {target}")
             subject = 'JanSeva - Your Verification Code'
             message = f'Hello,\n\nYour JanSeva verification OTP is: {code}\n\nThis code will expire in 5 minutes.\n\nBest regards,\nJanSeva Team'
             html_message = f'''
@@ -121,6 +121,7 @@ def send_otp_message(channel, target, code):
             brevo_api_key = getattr(settings, 'BREVO_API_KEY', None) or os.environ.get('BREVO_API_KEY')
             from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or os.environ.get('DEFAULT_FROM_EMAIL', 'ommjena77@gmail.com')
 
+            sent_via_brevo = False
             if brevo_api_key:
                 import requests
                 print("[OTP] Sending via Brevo HTTP API...")
@@ -141,27 +142,26 @@ def send_otp_message(channel, target, code):
                     )
                     print(f"[OTP] Brevo response status: {resp.status_code}")
                     if resp.status_code in [200, 201, 202]:
-                        print("[OTP] Delivery accepted")
+                        print("[OTP] Delivery accepted via Brevo API")
                         return True
                     else:
-                        print("[OTP] Delivery failed")
-                        return False
+                        print(f"[OTP] Brevo API error response: {resp.text}")
                 except Exception as api_err:
                     print(f"[OTP] Brevo API exception: {api_err}")
-                    return False
-            else:
-                # Default fallback: Django SMTP if BREVO_API_KEY is not set
-                print("[OTP] BREVO_API_KEY not configured, attempting delivery via Django SMTP...")
-                send_mail(
-                    subject,
-                    message,
-                    from_email,
-                    [target],
-                    fail_silently=False,
-                    html_message=html_message
-                )
-                print("[OTP] Delivery accepted via SMTP")
-                return True
+
+            # Fallback to Django SMTP (Gmail / Brevo SMTP) if Brevo API is not set or fails
+            print("[OTP] Attempting delivery via Django SMTP...")
+            send_mail(
+                subject,
+                message,
+                from_email,
+                [target],
+                fail_silently=False,
+                html_message=html_message
+            )
+            print("[OTP] Delivery accepted via SMTP")
+            return True
+
         except Exception as e:
             print(f"[OTP] Delivery failed with exception: {type(e).__name__} ({e})")
             if settings.DEBUG:
