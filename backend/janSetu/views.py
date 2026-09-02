@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -663,7 +664,7 @@ def issue_list_create(request):
         issues = (
             CivicIssue.objects
             .filter(is_hidden_from_map=False)
-            .select_related('reporter', 'department', 'ward')
+            .select_related('reporter', 'assigned_officer')
             .prefetch_related('comments', 'upvoted_users')
             .order_by('-created_at')
         )
@@ -780,7 +781,7 @@ def issue_detail(request, pk):
     try:
         issue = (
             CivicIssue.objects
-            .select_related('reporter', 'department', 'ward')
+            .select_related('reporter', 'assigned_officer')
             .prefetch_related('comments', 'upvoted_users')
             .get(pk=pk)
         )
