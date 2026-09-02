@@ -660,7 +660,13 @@ def issue_list_create(request):
         pincode = request.query_params.get('pincode')
         department = request.query_params.get('department')
         
-        issues = CivicIssue.objects.filter(is_hidden_from_map=False).order_by('-created_at')
+        issues = (
+            CivicIssue.objects
+            .filter(is_hidden_from_map=False)
+            .select_related('reporter', 'department', 'ward')
+            .prefetch_related('comments', 'upvoted_users')
+            .order_by('-created_at')
+        )
         
         if department and department not in ['municipal', 'all', '']:
             dept_lower = department.lower()
@@ -772,7 +778,12 @@ def issue_list_create(request):
 @permission_classes([AllowAny])
 def issue_detail(request, pk):
     try:
-        issue = CivicIssue.objects.get(pk=pk)
+        issue = (
+            CivicIssue.objects
+            .select_related('reporter', 'department', 'ward')
+            .prefetch_related('comments', 'upvoted_users')
+            .get(pk=pk)
+        )
     except CivicIssue.DoesNotExist:
         return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
         

@@ -110,6 +110,8 @@ if SUPABASE_DB_URL:
             'PASSWORD': unquote(url.password or ''),
             'HOST': url.hostname,
             'PORT': url.port or 5432,
+            'CONN_MAX_AGE': 600,
+            'CONN_HEALTH_CHECKS': True,
             'OPTIONS': {
                 'sslmode': 'require',
             }
@@ -126,6 +128,8 @@ elif SUPABASE_DB_HOST:
             'PASSWORD': os.environ.get('SUPABASE_DB_PASSWORD', ''),
             'HOST': SUPABASE_DB_HOST,
             'PORT': os.environ.get('SUPABASE_DB_PORT', '5432'),
+            'CONN_MAX_AGE': 600,
+            'CONN_HEALTH_CHECKS': True,
             'OPTIONS': {
                 'sslmode': 'require',
             }
@@ -138,6 +142,7 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
+            'CONN_MAX_AGE': 600,
         }
     }
 
