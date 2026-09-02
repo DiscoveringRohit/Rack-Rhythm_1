@@ -70,18 +70,13 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
 class ReporterSerializer(serializers.ModelSerializer):
-    name = serializers.SerializerMethodField()
     isVerified = serializers.BooleanField(source='verified_citizen')
     karma = serializers.IntegerField(source='civic_citizen_xp')
+    id = serializers.IntegerField()
 
     class Meta:
         model = CustomUser
-        fields = ['name', 'avatar', 'isVerified', 'karma']
-
-    def get_name(self, obj):
-        if hasattr(obj, 'profile') and obj.profile.full_name:
-            return obj.profile.full_name
-        return obj.username
+        fields = ['id', 'isVerified', 'karma']
 
 class OfficerSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
