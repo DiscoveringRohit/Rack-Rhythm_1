@@ -210,3 +210,63 @@ class BudgetAllocation(models.Model):
     def __str__(self):
         return f"{self.title} - ₹{self.allocated_amount} ({self.status})"
 
+
+class ConsensusPoll(models.Model):
+    STATUS_CHOICES = [
+        ('Active Ballot', 'Active Ballot'),
+        ('Approved', 'Approved'),
+        ('Rejected', 'Rejected'),
+    ]
+
+    id = models.CharField(max_length=100, primary_key=True)
+    title = models.CharField(max_length=255)
+    department = models.CharField(max_length=150)
+    ward = models.CharField(max_length=100)
+    description = models.TextField()
+    yes_votes = models.IntegerField(default=0)
+    no_votes = models.IntegerField(default=0)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Active Ballot')
+    days_left = models.IntegerField(default=14)
+    budget_estimate = models.CharField(max_length=100, default='₹ 45.0 Lakhs')
+    created_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_polls')
+    created_by_name = models.CharField(max_length=150, blank=True, null=True)
+    voted_users = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.department}] {self.title} ({self.status})"
+
+
+class WardBudgetProposal(models.Model):
+    STATUS_CHOICES = [
+        ('Open for Voting', 'Open for Voting'),
+        ('Threshold Met', 'Threshold Met'),
+        ('In Execution', 'In Execution'),
+    ]
+
+    id = models.CharField(max_length=100, primary_key=True)
+    title = models.CharField(max_length=255)
+    category = models.CharField(max_length=100)
+    description = models.TextField()
+    required_budget = models.DecimalField(max_digits=14, decimal_places=2, default=2500000.00)
+    current_votes = models.IntegerField(default=0)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Open for Voting')
+    ward_pin = models.CharField(max_length=50, default='751024')
+    created_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_proposals')
+    created_by_name = models.CharField(max_length=150, blank=True, null=True)
+    voted_users = models.JSONField(default=list, blank=True)
+    linked_poll_id = models.CharField(max_length=100, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.title} - ₹{self.required_budget} ({self.status})"
+
+
