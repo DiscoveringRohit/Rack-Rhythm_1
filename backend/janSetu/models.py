@@ -105,6 +105,14 @@ class CivicIssue(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['pin_code', 'status', 'is_hidden_from_map']),
+            models.Index(fields=['category', 'status']),
+            models.Index(fields=['created_at']),
+        ]
+
     def __str__(self):
         return f"{self.id} - {self.title}"
 
@@ -179,6 +187,13 @@ class Announcement(models.Model):
     action_url = models.CharField(max_length=255, blank=True, null=True)
     is_active = models.BooleanField(default=True)
 
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['is_active', 'department']),
+            models.Index(fields=['created_at']),
+        ]
+
     def __str__(self):
         target = ", ".join(self.pincodes) if self.pincodes else "ALL"
         return f"[{self.department}] {self.title} (PIN: {target})"
@@ -236,6 +251,11 @@ class ConsensusPoll(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['ward', 'status']),
+            models.Index(fields=['department', 'status']),
+            models.Index(fields=['created_at']),
+        ]
 
     def __str__(self):
         return f"[{self.department}] {self.title} ({self.status})"
@@ -265,8 +285,14 @@ class WardBudgetProposal(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['ward_pin', 'status']),
+            models.Index(fields=['category', 'status']),
+            models.Index(fields=['created_at']),
+        ]
 
     def __str__(self):
         return f"{self.title} - ₹{self.required_budget} ({self.status})"
+
 
 
