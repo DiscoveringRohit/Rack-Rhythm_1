@@ -22,6 +22,7 @@ from .serializers import (
     StateSerializer, CitySerializer, WardSerializer, RegisterSerializer, LoginSerializer,
     AnnouncementSerializer, BudgetAllocationSerializer, ConsensusPollSerializer, WardBudgetProposalSerializer
 )
+from .storage_utils import sanitize_avatar, sanitize_issue_images, process_media_string
 
 # Helper to set refresh cookie on responses
 def _set_refresh_cookie(resp: Response, refresh_token: str):
@@ -427,6 +428,10 @@ def user_profile(request):
             user.first_name = name_parts[0]
             user.last_name = name_parts[1] if len(name_parts) > 1 else ''
 
+        # Sanitize and compress avatar if updated
+        if 'avatar' in data and data['avatar']:
+            data['avatar'] = sanitize_avatar(data['avatar'], user_identifier=user.username)
+
         serializer = CustomUserSerializer(user, data=data, partial=True)
         if serializer.is_valid():
             updated_user = serializer.save()
@@ -735,6 +740,10 @@ def issue_list_create(request):
             new_id = f"JS-{counter}"
             
         data['id'] = new_id
+
+        # Sanitize and compress reported images (uploading to Supabase Storage if configured)
+        if 'images' in data and isinstance(data['images'], dict):
+            data['images'] = sanitize_issue_images(data['images'], issue_id=new_id)
         
         serializer = CivicIssueSerializer(data=data, context={'request': request})
         if serializer.is_valid():
@@ -913,7 +922,7 @@ def update_issue_status(request, pk):
     
     if resolved_image:
         images = issue.images or {}
-        images['resolved'] = resolved_image
+        images['resolved'] = process_media_string(resolved_image, folder="issues", prefix=f"{issue.id}_resolved", max_dim=800, quality=65)
         issue.images = images
         
     # Enforce Closed-Loop Resolution Logic
@@ -1262,6 +1271,13 @@ def leaderboard_list(request):
         if hasattr(u, 'profile') and u.profile.full_name:
             name = u.profile.full_name
             
+        # Avatar bandwidth guard: if avatar is a huge base64 string (>25KB), fallback to identicon
+        avatar_val = u.avatar
+        if avatar_val and avatar_val.startswith('data:image/') and len(avatar_val) > 25000:
+            avatar_val = f"https://api.dicebear.com/7.x/bottts/svg?seed={u.username}"
+        elif not avatar_val:
+            avatar_val = f"https://api.dicebear.com/7.x/bottts/svg?seed={u.username}"
+
         leaderboard.append({
             "rank": rank,
             "id": u.id,
@@ -1270,7 +1286,7 @@ def leaderboard_list(request):
             "ward": u.ward.name if u.ward else (u.city or (f"PIN {u.pin_code}" if u.pin_code else "Civic Zone")),
             "karma": u.civic_citizen_xp or 0,
             "badge": u.level_title or ("Ward Officer" if u.role == "officer" else "Active Citizen"),
-            "avatar": u.avatar or f"https://api.dicebear.com/7.x/bottts/svg?seed={u.username}",
+            "avatar": avatar_val,
             "role": u.role,
             "level": u.level or (1 if (u.civic_citizen_xp or 0) < 200 else (2 if (u.civic_citizen_xp or 0) < 500 else 3)),
         })
