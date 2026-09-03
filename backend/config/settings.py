@@ -227,6 +227,7 @@ DEFAULT_FROM_EMAIL = os.environ.get(
 
 # CORS & CSRF Configuration
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
@@ -235,11 +236,13 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "https://jan-seva-eight.vercel.app",
     "https://janseva-3c8v.onrender.com",
+    "android-app://com.example.janseva_app",
 ]
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",
     r"^https://.*\.onrender\.com$",
+    r"^android-app://.*$",
 ]
 
 CORS_ALLOW_HEADERS = [
@@ -252,6 +255,10 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'x-client-platform',
+    'x-app-name',
+    'x-app-version',
+    'x-device-id',
 ]
 
 CORS_ALLOW_METHODS = [
