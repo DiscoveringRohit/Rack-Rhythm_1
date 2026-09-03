@@ -18,7 +18,7 @@ import difflib
 from .models import CustomUser, OTPRecord, CivicIssue, Comment, NotificationItem, State, City, Ward, Profile, Announcement, BudgetAllocation, ConsensusPoll, WardBudgetProposal
 from .serializers import (
     OTPRequestSerializer, OTPVerifySerializer, CustomUserSerializer,
-    CivicIssueSerializer, CommentSerializer, NotificationSerializer,
+    CivicIssueSerializer, CivicIssueFeedSerializer, CommentSerializer, NotificationSerializer,
     StateSerializer, CitySerializer, WardSerializer, RegisterSerializer, LoginSerializer,
     AnnouncementSerializer, BudgetAllocationSerializer, ConsensusPollSerializer, WardBudgetProposalSerializer
 )
@@ -692,8 +692,49 @@ def issue_list_create(request):
         if pincode:
             issues = issues.filter(Q(pin_code=pincode) | Q(location__pincode=pincode) | Q(location__address__icontains=pincode))
             
-        serializer = CivicIssueSerializer(issues, many=True, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # Pre-fetch user upvoted issue IDs to eliminate N+1 upvote queries
+        user_upvoted_ids = None
+        if request.user and request.user.is_authenticated:
+            user_upvoted_ids = set(request.user.upvoted_issues.values_list('id', flat=True))
+
+        context = {'request': request, 'user_upvoted_ids': user_upvoted_ids}
+
+        # If explicit no_page=true requested, return unpaginated lightweight list
+        if request.query_params.get('no_page') == 'true':
+            serializer = CivicIssueFeedSerializer(issues, many=True, context=context)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Pagination parameters (page default 1, page_size default 10, max 50)
+        page_param = request.query_params.get('page')
+        page_size_param = request.query_params.get('page_size')
+        page = 1
+        page_size = 10
+        if page_param:
+            try:
+                page = max(1, int(page_param))
+            except ValueError:
+                page = 1
+        if page_size_param:
+            try:
+                page_size = max(1, min(50, int(page_size_param)))
+            except ValueError:
+                page_size = 10
+
+        total_count = issues.count()
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_issues = issues[start:end]
+
+        serializer = CivicIssueFeedSerializer(paginated_issues, many=True, context=context)
+        total_pages = math.ceil(total_count / page_size) if page_size > 0 else 1
+
+        return Response({
+            'count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': total_pages,
+            'results': serializer.data
+        }, status=status.HTTP_200_OK)
         
     elif request.method == 'POST':
         user = request.user if (request.user and request.user.is_authenticated) else None
