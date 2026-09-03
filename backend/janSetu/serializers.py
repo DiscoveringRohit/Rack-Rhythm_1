@@ -142,9 +142,14 @@ class CivicIssueSerializer(serializers.ModelSerializer):
 
     def get_isUpvoted(self, obj):
         request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return obj.upvoted_users.filter(id=request.user.id).exists()
-        return False
+        if not request or not request.user.is_authenticated:
+            return False
+        user_upvoted_ids = self.context.get('user_upvoted_ids')
+        if user_upvoted_ids is not None:
+            return obj.id in user_upvoted_ids
+        if hasattr(obj, '_prefetched_objects_cache') and 'upvoted_users' in obj._prefetched_objects_cache:
+            return any(user.id == request.user.id for user in obj.upvoted_users.all())
+        return obj.upvoted_users.filter(id=request.user.id).exists()
 
     def get_verificationVotes(self, obj):
         votes = obj.verification_votes or {"yes": 0, "no": 0, "users": {}}
@@ -161,6 +166,62 @@ class CivicIssueSerializer(serializers.ModelSerializer):
             "yes": yes_count,
             "no": no_count,
             "userVoted": user_voted
+        }
+
+class CivicIssueFeedSerializer(serializers.ModelSerializer):
+    reporter = ReporterSerializer(read_only=True)
+    isUpvoted = serializers.SerializerMethodField()
+    commentsCount = serializers.IntegerField(source='comments_count', read_only=True)
+    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
+    assignedDepartment = serializers.CharField(source='assigned_department', required=False, allow_blank=True, allow_null=True)
+    timesReported = serializers.IntegerField(source='times_reported', required=False, default=1)
+    pincode = serializers.CharField(source='pin_code', read_only=True)
+    images = serializers.SerializerMethodField()
+    aiAnalysis = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CivicIssue
+        fields = [
+            'id', 'title', 'description', 'category', 'status', 'urgency',
+            'location', 'pin_code', 'pincode', 'reporter', 'images', 'aiAnalysis',
+            'assignedDepartment', 'upvotes', 'isUpvoted', 'commentsCount',
+            'times_reported', 'timesReported', 'createdAt'
+        ]
+
+    def get_isUpvoted(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        user_upvoted_ids = self.context.get('user_upvoted_ids')
+        if user_upvoted_ids is not None:
+            return obj.id in user_upvoted_ids
+        if hasattr(obj, '_prefetched_objects_cache') and 'upvoted_users' in obj._prefetched_objects_cache:
+            return any(user.id == request.user.id for user in obj.upvoted_users.all())
+        return obj.upvoted_users.filter(id=request.user.id).exists()
+
+    def get_images(self, obj):
+        imgs = obj.images or {}
+        reported = imgs.get('reported', '')
+        resolved = imgs.get('resolved', '')
+
+        # Truncate raw base64 data URLs in feed list to lightweight fallback/thumbnail URLs to prevent megabyte payloads
+        if reported and reported.startswith('data:image/') and len(reported) > 2000:
+            reported = imgs.get('thumbnail') or "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=600&auto=format&fit=crop&q=75"
+
+        if resolved and resolved.startswith('data:image/') and len(resolved) > 2000:
+            resolved = imgs.get('resolved_thumbnail') or "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&auto=format&fit=crop&q=75"
+
+        return {
+            "reported": reported,
+            "resolved": resolved
+        }
+
+    def get_aiAnalysis(self, obj):
+        ai = obj.ai_analysis or {}
+        return {
+            "detectedObject": ai.get("detectedObject", "Civic Defect"),
+            "confidence": ai.get("confidence", 90),
+            "summary": ai.get("summary", "Civic issue reported.")
         }
 
 class NotificationSerializer(serializers.ModelSerializer):
