@@ -979,14 +979,38 @@ def update_issue_status(request, pk):
                 issue.assigned_officer = request.user
         else:
             assigned_officer_id = request.data.get('assigned_officer_id') or request.data.get('officerId') or request.data.get('officer_id')
+            officer_name = request.data.get('officer_name') or request.data.get('officerName')
+            
+            officer_user = None
             if assigned_officer_id:
-                officer_user = None
                 if str(assigned_officer_id).isdigit():
                     officer_user = CustomUser.objects.filter(id=int(assigned_officer_id)).first()
                 if not officer_user:
                     officer_user = CustomUser.objects.filter(models.Q(username=str(assigned_officer_id)) | models.Q(email=str(assigned_officer_id))).first()
-                if officer_user:
-                    issue.assigned_officer = officer_user
+            
+            if not officer_user and (new_status in ['Assigned', 'Squad Dispatched', 'In Progress', 'Field Work Active'] or "responsibility" in (note or "").lower()):
+                dept_cat = issue.category or "Water"
+                officer_user = CustomUser.objects.filter(role='officer', level_title__icontains=dept_cat).first() or CustomUser.objects.filter(role='officer').first()
+                if not officer_user:
+                    officer_user = CustomUser.objects.create(
+                        username=f"officer_{dept_cat.lower().replace(' ', '_')}",
+                        email=f"officer.{dept_cat.lower().replace(' ', '_')}@bmc.gov.in",
+                        role='officer',
+                        level_title=f"Division Lead Officer - {dept_cat}",
+                        phone_number="+91 94370 12345"
+                    )
+                    officer_user.set_unusable_password()
+                    officer_user.save()
+                    Profile.objects.create(
+                        user=officer_user,
+                        public_username=f"officer_{dept_cat.lower().replace(' ', '_')}",
+                        full_name=officer_name or f"Er. {dept_cat} Officer",
+                        is_email_verified=True,
+                        number="+91 94370 12345"
+                    )
+
+            if officer_user:
+                issue.assigned_officer = officer_user
                 
         issue.status = new_status
         timeline = issue.timeline or []
@@ -1050,14 +1074,36 @@ def assign_officer_squad(request, pk):
             issue.assigned_officer = request.user
         else:
             assigned_officer_id = request.data.get('assigned_officer_id') or request.data.get('officerId') or request.data.get('officer_id')
+            officer_user = None
             if assigned_officer_id:
-                officer_user = None
                 if str(assigned_officer_id).isdigit():
                     officer_user = CustomUser.objects.filter(id=int(assigned_officer_id)).first()
                 if not officer_user:
                     officer_user = CustomUser.objects.filter(models.Q(username=str(assigned_officer_id)) | models.Q(email=str(assigned_officer_id))).first()
-                if officer_user:
-                    issue.assigned_officer = officer_user
+            
+            if not officer_user:
+                dept_cat = issue.category or "Water"
+                officer_user = CustomUser.objects.filter(role='officer', level_title__icontains=dept_cat).first() or CustomUser.objects.filter(role='officer').first()
+                if not officer_user:
+                    officer_user = CustomUser.objects.create(
+                        username=f"officer_{dept_cat.lower().replace(' ', '_')}",
+                        email=f"officer.{dept_cat.lower().replace(' ', '_')}@bmc.gov.in",
+                        role='officer',
+                        level_title=f"Division Lead Officer - {dept_cat}",
+                        phone_number="+91 94370 12345"
+                    )
+                    officer_user.set_unusable_password()
+                    officer_user.save()
+                    Profile.objects.create(
+                        user=officer_user,
+                        public_username=f"officer_{dept_cat.lower().replace(' ', '_')}",
+                        full_name=officer_name or f"Er. {dept_cat} Officer",
+                        is_email_verified=True,
+                        number="+91 94370 12345"
+                    )
+
+            if officer_user:
+                issue.assigned_officer = officer_user
 
         timeline = issue.timeline or []
         if squad_unit:
