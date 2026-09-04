@@ -972,6 +972,17 @@ def update_issue_status(request, pk):
         if not is_citizen_audit and not (request.user.is_authenticated and request.user.is_superuser):
             new_status = 'Pending Citizen Verification'
             note = note or "Municipal crew completed physical field repairs. Ticket queued for on-ground citizen live camera audit."
+
+    # Associate assigned officer if updating to Assigned / In Progress or claiming responsibility
+    if request.user.is_authenticated and request.user.role in ['officer', 'corporator', 'admin']:
+        if new_status in ['Assigned', 'Squad Dispatched', 'In Progress', 'Field Work Active'] or "responsibility" in (note or "").lower():
+            issue.assigned_officer = request.user
+    
+    assigned_officer_id = request.data.get('assigned_officer_id') or request.data.get('officerId')
+    if assigned_officer_id:
+        officer_user = CustomUser.objects.filter(id=assigned_officer_id).first()
+        if officer_user:
+            issue.assigned_officer = officer_user
             
     issue.status = new_status
     timeline = issue.timeline or []
@@ -1014,22 +1025,30 @@ def update_issue_status(request, pk):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def assign_officer_squad(request, pk):
-    try:
-        issue = CivicIssue.objects.get(pk=pk)
-    except CivicIssue.DoesNotExist:
+    issue = CivicIssue.objects.filter(pk=pk).first()
+    if not issue:
+        clean_pk = pk.replace("JS-", "")
+        issue = CivicIssue.objects.filter(models.Q(id=f"JS-{clean_pk}") | models.Q(id=clean_pk)).first()
+    if not issue:
         return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    squad_unit = request.data.get('squad_unit')
-    officer_name = (request.user.get_full_name() or request.user.username) if request.user.is_authenticated else "Lead Officer"
+    squad_unit = request.data.get('squad_unit') or request.data.get('squad')
+    officer_name = (request.user.get_full_name() or request.user.username) if request.user.is_authenticated else (request.data.get('officer_name') or "Lead Officer")
 
-    if request.user.is_authenticated and request.user.role == 'officer':
+    if request.user.is_authenticated and request.user.role in ['officer', 'corporator', 'admin']:
         issue.assigned_officer = request.user
+    else:
+        assigned_officer_id = request.data.get('assigned_officer_id') or request.data.get('officerId')
+        if assigned_officer_id:
+            officer_user = CustomUser.objects.filter(id=assigned_officer_id).first()
+            if officer_user:
+                issue.assigned_officer = officer_user
 
     timeline = issue.timeline or []
     if squad_unit:
-        issue.status = 'Squad Dispatched'
+        issue.status = 'In Progress'
         timeline.append({
-            "stage": "Squad Dispatched",
+            "stage": "In Progress",
             "timestamp": timezone.now().isoformat(),
             "note": f"Assigned to {squad_unit} by {officer_name}.",
             "actor": officer_name
@@ -1039,7 +1058,7 @@ def assign_officer_squad(request, pk):
         timeline.append({
             "stage": "Assigned",
             "timestamp": timezone.now().isoformat(),
-            "note": f"Assigned lead responsibility to {officer_name}.",
+            "note": f"Officer {officer_name} took primary responsibility as assigned officer.",
             "actor": officer_name
         })
 

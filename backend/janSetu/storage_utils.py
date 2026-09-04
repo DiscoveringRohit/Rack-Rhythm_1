@@ -132,9 +132,6 @@ def process_media_string(media_str: str, folder: str = "media", prefix: str = "i
 
     except Exception as e:
         print(f"[Storage] Failed to process media string: {e}")
-        # If processing fails and original is monstrously large (>50KB), return a safe fallback
-        if len(media_str) > 50000:
-            return f"https://api.dicebear.com/7.x/bottts/svg?seed={prefix}"
         return media_str
 
 

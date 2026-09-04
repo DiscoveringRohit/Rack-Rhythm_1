@@ -201,20 +201,12 @@ class CivicIssueFeedSerializer(serializers.ModelSerializer):
 
     def get_images(self, obj):
         imgs = obj.images or {}
-        reported = imgs.get('reported', '')
-        resolved = imgs.get('resolved', '')
-
-        # Truncate raw base64 data URLs in feed list to lightweight fallback/thumbnail URLs to prevent megabyte payloads
-        if reported and reported.startswith('data:image/') and len(reported) > 2000:
-            reported = imgs.get('thumbnail') or "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=600&auto=format&fit=crop&q=75"
-
-        if resolved and resolved.startswith('data:image/') and len(resolved) > 2000:
-            resolved = imgs.get('resolved_thumbnail') or "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&auto=format&fit=crop&q=75"
-
-        return {
-            "reported": reported,
-            "resolved": resolved
-        }
+        if isinstance(imgs, dict):
+            return {
+                "reported": imgs.get('reported') or imgs.get('thumbnail') or "",
+                "resolved": imgs.get('resolved') or imgs.get('resolved_thumbnail') or ""
+            }
+        return {"reported": "", "resolved": ""}
 
     def get_aiAnalysis(self, obj):
         ai = obj.ai_analysis or {}
@@ -269,8 +261,8 @@ class ConsensusPollSerializer(serializers.ModelSerializer):
     noVotes = serializers.IntegerField(source='no_votes', required=False, default=0)
     daysLeft = serializers.IntegerField(source='days_left', required=False, default=14)
     budgetEstimate = serializers.CharField(source='budget_estimate', required=False, default='₹ 45.0 Lakhs')
-    createdByName = serializers.CharField(source='created_by_name', required=False, allow_null=True)
-    votedUsers = serializers.JSONField(source='voted_users', read_only=True)
+    createdByName = serializers.CharField(source='created_by_name', required=False, allow_null=True, allow_blank=True)
+    votedUsers = serializers.JSONField(source='voted_users', required=False, default=dict)
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
 
@@ -278,21 +270,40 @@ class ConsensusPollSerializer(serializers.ModelSerializer):
         model = ConsensusPoll
         fields = [
             'id', 'title', 'department', 'ward', 'description',
-            'yes_votes', 'yesVotes', 'no_votes', 'noVotes',
-            'status', 'days_left', 'daysLeft',
-            'budget_estimate', 'budgetEstimate',
-            'createdByName', 'votedUsers', 'createdAt', 'updatedAt'
+            'yesVotes', 'noVotes', 'status', 'daysLeft',
+            'budgetEstimate', 'createdByName', 'votedUsers',
+            'createdAt', 'updatedAt'
         ]
+        extra_kwargs = {
+            'description': {'required': False, 'allow_blank': True},
+            'status': {'required': False},
+        }
+
+    def to_internal_value(self, data):
+        data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
+        if 'yes_votes' in data_copy and 'yesVotes' not in data_copy:
+            data_copy['yesVotes'] = data_copy['yes_votes']
+        if 'no_votes' in data_copy and 'noVotes' not in data_copy:
+            data_copy['noVotes'] = data_copy['no_votes']
+        if 'days_left' in data_copy and 'daysLeft' not in data_copy:
+            data_copy['daysLeft'] = data_copy['days_left']
+        if 'budget_estimate' in data_copy and 'budgetEstimate' not in data_copy:
+            data_copy['budgetEstimate'] = data_copy['budget_estimate']
+        if 'createdBy' in data_copy and 'createdByName' not in data_copy:
+            data_copy['createdByName'] = data_copy['createdBy']
+        if 'created_by_name' in data_copy and 'createdByName' not in data_copy:
+            data_copy['createdByName'] = data_copy['created_by_name']
+        return super().to_internal_value(data_copy)
 
 
 class WardBudgetProposalSerializer(serializers.ModelSerializer):
-    requiredBudget = serializers.DecimalField(source='required_budget', max_digits=14, decimal_places=2)
+    requiredBudget = serializers.DecimalField(source='required_budget', max_digits=14, decimal_places=2, required=False)
     currentVotes = serializers.IntegerField(source='current_votes', required=False, default=0)
     wardPin = serializers.CharField(source='ward_pin', required=False, default='751024')
-    createdBy = serializers.CharField(source='created_by_name', required=False, allow_null=True)
-    createdByName = serializers.CharField(source='created_by_name', required=False, allow_null=True)
-    votedUsers = serializers.JSONField(source='voted_users', read_only=True)
-    linkedPollId = serializers.CharField(source='linked_poll_id', required=False, allow_null=True)
+    createdBy = serializers.CharField(source='created_by_name', required=False, allow_null=True, allow_blank=True)
+    createdByName = serializers.CharField(source='created_by_name', required=False, allow_null=True, allow_blank=True)
+    votedUsers = serializers.JSONField(source='voted_users', required=False, default=list)
+    linkedPollId = serializers.CharField(source='linked_poll_id', required=False, allow_null=True, allow_blank=True)
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
 
@@ -300,11 +311,29 @@ class WardBudgetProposalSerializer(serializers.ModelSerializer):
         model = WardBudgetProposal
         fields = [
             'id', 'title', 'category', 'description',
-            'required_budget', 'requiredBudget',
-            'current_votes', 'currentVotes',
-            'status', 'ward_pin', 'wardPin',
-            'createdBy', 'createdByName', 'votedUsers',
+            'requiredBudget', 'currentVotes', 'status',
+            'wardPin', 'createdBy', 'createdByName', 'votedUsers',
             'linkedPollId', 'createdAt', 'updatedAt'
         ]
+        extra_kwargs = {
+            'description': {'required': False, 'allow_blank': True},
+            'status': {'required': False},
+        }
+
+    def to_internal_value(self, data):
+        data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
+        if 'required_budget' in data_copy and 'requiredBudget' not in data_copy:
+            data_copy['requiredBudget'] = data_copy['required_budget']
+        if 'current_votes' in data_copy and 'currentVotes' not in data_copy:
+            data_copy['currentVotes'] = data_copy['current_votes']
+        if 'ward_pin' in data_copy and 'wardPin' not in data_copy:
+            data_copy['wardPin'] = data_copy['ward_pin']
+        if 'pincode' in data_copy and 'wardPin' not in data_copy:
+            data_copy['wardPin'] = data_copy['pincode']
+        if 'createdBy' in data_copy and 'createdByName' not in data_copy:
+            data_copy['createdByName'] = data_copy['createdBy']
+        if 'created_by_name' in data_copy and 'createdByName' not in data_copy:
+            data_copy['createdByName'] = data_copy['created_by_name']
+        return super().to_internal_value(data_copy)
 
 
