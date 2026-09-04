@@ -935,7 +935,6 @@ def verify_issue(request, pk):
     stats["verificationVotes"] = stats.get("verificationVotes", 0) + 1
     request.user.stats = stats
     request.user.save()
-    
     return Response({"status": "voted", "votes": {
         "yes": votes["yes"],
         "no": votes["no"],
@@ -945,126 +944,145 @@ def verify_issue(request, pk):
 @api_view(['PATCH'])
 @permission_classes([AllowAny])
 def update_issue_status(request, pk):
-    issue = CivicIssue.objects.filter(pk=pk).first()
-    if not issue:
-        clean_pk = pk.replace("JS-", "")
-        issue = CivicIssue.objects.filter(models.Q(id=f"JS-{clean_pk}") | models.Q(id=clean_pk)).first()
-    if not issue:
-        return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
-        
-    new_status = request.data.get('status')
-    note = request.data.get('note', '')
-    resolved_image = request.data.get('resolved_image') or request.data.get('photo')
-    
-    if new_status not in ['Reported', 'AI Verified', 'Assigned', 'Squad Dispatched', 'Field Work Active', 'In Progress', 'Resolved', 'Pending Citizen Verification', 'Verified Resolved']:
-        return Response({"error": "Invalid status value."}, status=status.HTTP_400_BAD_REQUEST)
-        
-    actor_name = (request.user.get_full_name() or request.user.username) if request.user.is_authenticated else "Municipal Authority"
-    
-    if resolved_image:
-        images = issue.images or {}
-        images['resolved'] = process_media_string(resolved_image, folder="issues", prefix=f"{issue.id}_resolved", max_dim=800, quality=65)
-        issue.images = images
-        
-    # Enforce Closed-Loop Resolution Logic
-    if new_status in ['Resolved', 'Verified Resolved']:
-        is_citizen_audit = (request.user.is_authenticated and request.user.role == 'citizen') or resolved_image or ("citizen" in (note or "").lower())
-        if not is_citizen_audit and not (request.user.is_authenticated and request.user.is_superuser):
-            new_status = 'Pending Citizen Verification'
-            note = note or "Municipal crew completed physical field repairs. Ticket queued for on-ground citizen live camera audit."
-
-    # Associate assigned officer if updating to Assigned / In Progress or claiming responsibility
-    if request.user.is_authenticated and request.user.role in ['officer', 'corporator', 'admin']:
-        if new_status in ['Assigned', 'Squad Dispatched', 'In Progress', 'Field Work Active'] or "responsibility" in (note or "").lower():
-            issue.assigned_officer = request.user
-    
-    assigned_officer_id = request.data.get('assigned_officer_id') or request.data.get('officerId')
-    if assigned_officer_id:
-        officer_user = CustomUser.objects.filter(id=assigned_officer_id).first()
-        if officer_user:
-            issue.assigned_officer = officer_user
+    try:
+        issue = CivicIssue.objects.filter(pk=pk).first()
+        if not issue:
+            clean_pk = pk.replace("JS-", "")
+            issue = CivicIssue.objects.filter(models.Q(id=f"JS-{clean_pk}") | models.Q(id=clean_pk)).first()
+        if not issue:
+            return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
             
-    issue.status = new_status
-    timeline = issue.timeline or []
-    timeline.append({
-        "stage": new_status,
-        "timestamp": timezone.now().isoformat(),
-        "note": note or f"Status updated to {new_status} by {actor_name}.",
-        "actor": actor_name
-    })
-    issue.timeline = timeline
-    
-    if new_status == 'Verified Resolved':
-        issue.is_hidden_from_map = True
-        images = issue.images or {}
-        if 'resolved' not in images:
-            images['resolved'] = "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80"
+        new_status = request.data.get('status')
+        note = request.data.get('note', '')
+        resolved_image = request.data.get('resolved_image') or request.data.get('photo')
+        
+        if new_status not in ['Reported', 'AI Verified', 'Assigned', 'Squad Dispatched', 'Field Work Active', 'In Progress', 'Resolved', 'Pending Citizen Verification', 'Verified Resolved']:
+            return Response({"error": "Invalid status value."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        actor_name = (request.user.get_full_name() or request.user.username) if request.user.is_authenticated else (request.data.get('officer_name') or "Municipal Authority")
+        
+        if resolved_image:
+            images = issue.images or {}
+            images['resolved'] = process_media_string(resolved_image, folder="issues", prefix=f"{issue.id}_resolved", max_dim=800, quality=65)
             issue.images = images
             
-        if request.user.is_authenticated:
-            request.user.civic_citizen_xp = (request.user.civic_citizen_xp or 0) + 25
-            stats = request.user.stats or {}
-            stats["issuesResolved"] = stats.get("issuesResolved", 0) + 1
-            request.user.stats = stats
-            request.user.save()
-            
-    issue.save()
-    
-    if issue.reporter:
-        NotificationItem.objects.create(
-            user=issue.reporter,
-            title=f"Ticket #{issue.id} Status: {new_status}",
-            message=note or f"Ticket updated to {new_status}.",
-            notification_type="officer" if "Officer" in actor_name else "status",
-            issue_id=issue.id,
-            action_url=f"/issues/{issue.id}"
-        )
-    
-    return Response(CivicIssueSerializer(issue, context={'request': request}).data, status=status.HTTP_200_OK)
+        # Enforce Closed-Loop Resolution Logic
+        if new_status in ['Resolved', 'Verified Resolved']:
+            is_citizen_audit = (request.user.is_authenticated and request.user.role == 'citizen') or resolved_image or ("citizen" in (note or "").lower())
+            if not is_citizen_audit and not (request.user.is_authenticated and request.user.is_superuser):
+                new_status = 'Pending Citizen Verification'
+                note = note or "Municipal crew completed physical field repairs. Ticket queued for on-ground citizen live camera audit."
+
+        # Associate assigned officer if updating to Assigned / In Progress or claiming responsibility
+        if request.user.is_authenticated and request.user.role in ['officer', 'corporator', 'admin']:
+            if new_status in ['Assigned', 'Squad Dispatched', 'In Progress', 'Field Work Active'] or "responsibility" in (note or "").lower():
+                issue.assigned_officer = request.user
+        else:
+            assigned_officer_id = request.data.get('assigned_officer_id') or request.data.get('officerId') or request.data.get('officer_id')
+            if assigned_officer_id:
+                officer_user = None
+                if str(assigned_officer_id).isdigit():
+                    officer_user = CustomUser.objects.filter(id=int(assigned_officer_id)).first()
+                if not officer_user:
+                    officer_user = CustomUser.objects.filter(models.Q(username=str(assigned_officer_id)) | models.Q(email=str(assigned_officer_id))).first()
+                if officer_user:
+                    issue.assigned_officer = officer_user
+                
+        issue.status = new_status
+        timeline = issue.timeline or []
+        timeline.append({
+            "stage": new_status,
+            "timestamp": timezone.now().isoformat(),
+            "note": note or f"Status updated to {new_status} by {actor_name}.",
+            "actor": actor_name
+        })
+        issue.timeline = timeline
+        
+        if new_status == 'Verified Resolved':
+            issue.is_hidden_from_map = True
+            images = issue.images or {}
+            if 'resolved' not in images:
+                images['resolved'] = "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80"
+                issue.images = images
+                
+            if request.user.is_authenticated:
+                request.user.civic_citizen_xp = (request.user.civic_citizen_xp or 0) + 25
+                stats = request.user.stats or {}
+                stats["issuesResolved"] = stats.get("issuesResolved", 0) + 1
+                request.user.stats = stats
+                request.user.save()
+                
+        issue.save()
+        
+        if issue.reporter:
+            try:
+                NotificationItem.objects.create(
+                    user=issue.reporter,
+                    title=f"Ticket #{issue.id} Status: {new_status}",
+                    message=note or f"Ticket updated to {new_status}.",
+                    notification_type="officer" if "Officer" in actor_name else "status",
+                    issue_id=issue.id,
+                    action_url=f"/issues/{issue.id}"
+                )
+            except Exception as notif_err:
+                logger.warning(f"Failed to create reporter notification: {notif_err}")
+        
+        return Response(CivicIssueSerializer(issue, context={'request': request}).data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Error in update_issue_status: {e}", exc_info=True)
+        return Response({"error": "Failed to update issue status.", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def assign_officer_squad(request, pk):
-    issue = CivicIssue.objects.filter(pk=pk).first()
-    if not issue:
-        clean_pk = pk.replace("JS-", "")
-        issue = CivicIssue.objects.filter(models.Q(id=f"JS-{clean_pk}") | models.Q(id=clean_pk)).first()
-    if not issue:
-        return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
+    try:
+        issue = CivicIssue.objects.filter(pk=pk).first()
+        if not issue:
+            clean_pk = pk.replace("JS-", "")
+            issue = CivicIssue.objects.filter(models.Q(id=f"JS-{clean_pk}") | models.Q(id=clean_pk)).first()
+        if not issue:
+            return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    squad_unit = request.data.get('squad_unit') or request.data.get('squad')
-    officer_name = (request.user.get_full_name() or request.user.username) if request.user.is_authenticated else (request.data.get('officer_name') or "Lead Officer")
+        squad_unit = request.data.get('squad_unit') or request.data.get('squad')
+        officer_name = (request.user.get_full_name() or request.user.username) if request.user.is_authenticated else (request.data.get('officer_name') or "Lead Officer")
 
-    if request.user.is_authenticated and request.user.role in ['officer', 'corporator', 'admin']:
-        issue.assigned_officer = request.user
-    else:
-        assigned_officer_id = request.data.get('assigned_officer_id') or request.data.get('officerId')
-        if assigned_officer_id:
-            officer_user = CustomUser.objects.filter(id=assigned_officer_id).first()
-            if officer_user:
-                issue.assigned_officer = officer_user
+        if request.user.is_authenticated and request.user.role in ['officer', 'corporator', 'admin']:
+            issue.assigned_officer = request.user
+        else:
+            assigned_officer_id = request.data.get('assigned_officer_id') or request.data.get('officerId') or request.data.get('officer_id')
+            if assigned_officer_id:
+                officer_user = None
+                if str(assigned_officer_id).isdigit():
+                    officer_user = CustomUser.objects.filter(id=int(assigned_officer_id)).first()
+                if not officer_user:
+                    officer_user = CustomUser.objects.filter(models.Q(username=str(assigned_officer_id)) | models.Q(email=str(assigned_officer_id))).first()
+                if officer_user:
+                    issue.assigned_officer = officer_user
 
-    timeline = issue.timeline or []
-    if squad_unit:
-        issue.status = 'In Progress'
-        timeline.append({
-            "stage": "In Progress",
-            "timestamp": timezone.now().isoformat(),
-            "note": f"Assigned to {squad_unit} by {officer_name}.",
-            "actor": officer_name
-        })
-    else:
-        issue.status = 'Assigned'
-        timeline.append({
-            "stage": "Assigned",
-            "timestamp": timezone.now().isoformat(),
-            "note": f"Officer {officer_name} took primary responsibility as assigned officer.",
-            "actor": officer_name
-        })
+        timeline = issue.timeline or []
+        if squad_unit:
+            issue.status = 'In Progress'
+            timeline.append({
+                "stage": "In Progress",
+                "timestamp": timezone.now().isoformat(),
+                "note": f"Assigned to {squad_unit} by {officer_name}.",
+                "actor": officer_name
+            })
+        else:
+            issue.status = 'Assigned'
+            timeline.append({
+                "stage": "Assigned",
+                "timestamp": timezone.now().isoformat(),
+                "note": f"Officer {officer_name} took primary responsibility as assigned officer.",
+                "actor": officer_name
+            })
 
-    issue.timeline = timeline
-    issue.save()
-    return Response(CivicIssueSerializer(issue, context={'request': request}).data, status=status.HTTP_200_OK)
+        issue.timeline = timeline
+        issue.save()
+        return Response(CivicIssueSerializer(issue, context={'request': request}).data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Error in assign_officer_squad: {e}", exc_info=True)
+        return Response({"error": "Failed to assign squad/officer.", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])

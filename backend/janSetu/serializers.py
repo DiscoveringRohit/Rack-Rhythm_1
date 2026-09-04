@@ -80,17 +80,36 @@ class ReporterSerializer(serializers.ModelSerializer):
 
 class OfficerSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
-    role = serializers.CharField(source='level_title')
-    phone = serializers.CharField(source='phone_number')
+    role = serializers.SerializerMethodField()
+    phone = serializers.SerializerMethodField()
+    avatar = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
         fields = ['name', 'role', 'avatar', 'phone']
 
     def get_name(self, obj):
-        if hasattr(obj, 'profile') and obj.profile.full_name:
+        if not obj:
+            return "Lead Officer"
+        if hasattr(obj, 'profile') and obj.profile and obj.profile.full_name:
             return obj.profile.full_name
-        return obj.username
+        full_name = obj.get_full_name() if hasattr(obj, 'get_full_name') else ""
+        return full_name if full_name.strip() else (obj.username or "Lead Officer")
+
+    def get_role(self, obj):
+        if not obj:
+            return "Lead Officer"
+        return obj.level_title or ("Lead Officer" if getattr(obj, 'role', '') == 'officer' else "Municipal Authority")
+
+    def get_phone(self, obj):
+        if not obj:
+            return ""
+        return obj.phone_number or ""
+
+    def get_avatar(self, obj):
+        if not obj:
+            return "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80"
+        return obj.avatar or "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80"
 
 class CommentSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
